@@ -598,10 +598,8 @@
   .model-config-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .model-config-row {
     display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-    border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 10px;
   }
-  .model-config-row:hover { border-color: var(--accent); }
-  .model-config-row.active { border-color: var(--accent); background: var(--accent-soft); }
   .model-config-main { flex: 1; min-width: 0; }
   .model-config-title {
     display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text);
@@ -610,10 +608,6 @@
   .model-config-sub {
     margin-top: 2px; font-size: 12px; color: var(--text-3);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .model-badge {
-    flex: none; font-size: 10px; color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 4px; padding: 0 5px;
   }
   .model-config-actions { flex: none; display: flex; gap: 2px; }
   .model-config-actions button {
@@ -627,6 +621,15 @@
   @keyframes model-spin { to { transform: rotate(360deg); } }
   .tab-panel { padding: 4px 0; }
   .tab-panel[hidden] { display: none; }
+  .about-head { display: flex; align-items: center; gap: 14px; }
+  .about-logo { width: 56px; height: 56px; flex: none; }
+  .about-name { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .about-desc { font-size: 13px; color: var(--text-2); line-height: 1.7; margin: 4px 0 0; }
+  .about-link {
+    display: inline-block; margin-top: 12px; font-size: 13px;
+    color: var(--accent); text-decoration: none; word-break: break-all;
+  }
+  .about-link:hover { text-decoration: underline; }
   .theme-options { display: flex; gap: 12px; }
   .theme-option {
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
@@ -862,6 +865,7 @@
         <button class="snav active" data-tab="model">模型</button>
         <button class="snav" data-tab="proxy">代理</button>
         <button class="snav" data-tab="appearance">通用</button>
+        <button class="snav" data-tab="about">关于</button>
       </nav>
       <div class="settings-content">
     <div class="tab-panel" data-panel="model">
@@ -905,6 +909,44 @@
         <span id="fontSizeVal">16</span>
         <span class="fs-sample">Aa</span>
       </div>
+    </div>
+    <div class="tab-panel" data-panel="about" hidden>
+      <div class="about-head">
+        <svg class="about-logo" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="aboutLogoBg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#303036" />
+              <stop offset="1" stop-color="#141417" />
+            </linearGradient>
+            <linearGradient id="aboutLogoGlow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.10" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+            </linearGradient>
+            <clipPath id="aboutLogoBody">
+              <rect x="84" y="84" width="856" height="856" rx="190" />
+            </clipPath>
+          </defs>
+          <rect x="84" y="84" width="856" height="856" rx="190" fill="url(#aboutLogoBg)" />
+          <g clip-path="url(#aboutLogoBody)">
+            <ellipse cx="512" cy="120" rx="760" ry="440" fill="url(#aboutLogoGlow)" />
+          </g>
+          <g fill="none" stroke="#F6F2E9" stroke-width="96">
+            <path d="M290 541 A111 111 0 0 1 512 541" />
+            <path d="M512 541 A111 111 0 0 1 734 541" />
+          </g>
+          <g fill="#F6F2E9">
+            <path d="M242 541 V682 a48 48 0 0 0 96 0 V541 Z" />
+            <path d="M464 541 V682 a48 48 0 0 0 96 0 V541 Z" />
+            <path d="M686 541 V682 a48 48 0 0 0 96 0 V541 Z" />
+          </g>
+          <circle cx="512" cy="296" r="48" fill="#E8573F" />
+        </svg>
+        <div>
+          <div class="about-name">Mino</div>
+          <p class="about-desc">一个在本机运行的桌面 AI Agent，界面、模型与对话数据都留在你自己的电脑上。</p>
+        </div>
+      </div>
+      <a class="about-link" id="aboutRepoLink" href="https://github.com/OneStackCoder/Muji">https://github.com/OneStackCoder/Muji</a>
     </div>
       </div>
     </div>
@@ -1072,16 +1114,15 @@
     renderModelMenu();
   }
 
-  // 模型配置列表：每份配置一行，点击行切换为当前模型，行内提供编辑 / 测试 / 删除
+  // 模型配置列表：每份配置一行，仅提供编辑 / 测试 / 删除；当前模型在聊天框下方切换
   function renderModelList() {
     modelConfigList.innerHTML = '';
     modelEmptyHint.hidden = false;
     modelEmptyHint.textContent = modelsState.items.length
-      ? '点击配置行切换当前使用的模型'
+      ? '此处仅管理配置，聊天框下方可切换当前使用的模型'
       : '尚未配置模型，点击上方按钮添加';
     for (const m of modelsState.items) {
-      const active = m.id === modelsState.activeId;
-      const row = el('div', 'model-config-row' + (active ? ' active' : ''));
+      const row = el('div', 'model-config-row');
       const main = el('div', 'model-config-main');
       const title = el('div', 'model-config-title');
       title.appendChild(el('span', '', m.model));
@@ -1107,7 +1148,6 @@
       delBtn.onclick = (e) => { e.stopPropagation(); deleteSavedModel(m); };
       actions.append(editBtn, testBtn, delBtn);
       row.append(main, actions);
-      row.onclick = () => activateSavedModel(m.id);
       modelConfigList.appendChild(row);
     }
   }
@@ -1500,6 +1540,12 @@
     applyTheme(activeSettings.theme);
   };
   document.getElementById('settingsSave').onclick = saveSettings;
+  // 关于页外链交给系统浏览器，避免 webview 自身导航离开应用
+  const aboutRepoLink = document.getElementById('aboutRepoLink');
+  aboutRepoLink.onclick = (e) => {
+    e.preventDefault();
+    window.MinoAgent.openExternal(aboutRepoLink.href).catch(() => {});
+  };
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) { overlay.hidden = true; applyTheme(activeSettings.theme); }
   });

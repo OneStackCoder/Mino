@@ -1015,6 +1015,15 @@ export function startWebUI(): void {
           applyProxy(settings.proxy);
           return settings;
         },
+        // 用系统默认浏览器打开外部链接（设置-关于的跳转）
+        openExternal(input: unknown) {
+          const url = typeof input === "string" ? input.trim() : "";
+          if (!/^https?:\/\//i.test(url)) throw new Error("仅支持 http(s) 链接");
+          const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+          const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+          spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
+          return { ok: true };
+        },
         // ---------- 文件操作权限：按会话独立设置，改完即时重建 agent ----------
         setPermission(input: unknown) {
           if (busy) throw new Error("上一轮还在处理中");
