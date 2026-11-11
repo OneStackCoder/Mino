@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.svg" alt="Mino logo" width="96">
+</p>
+
 # Mino
 
 <img src="screenshot.png" alt="Mino 截图" width="720">
