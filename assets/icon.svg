@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#303036"/>
+      <stop offset="1" stop-color="#141417"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="body">
+      <rect x="84" y="84" width="856" height="856" rx="190"/>
+    </clipPath>
+  </defs>
+  <rect x="84" y="84" width="856" height="856" rx="190" fill="url(#bg)"/>
+  <g clip-path="url(#body)">
+    <ellipse cx="512" cy="120" rx="760" ry="440" fill="url(#glow)"/>
+  </g>
+  <g fill="none" stroke="#F6F2E9" stroke-width="96">
+    <path d="M290 541 A111 111 0 0 1 512 541"/>
+    <path d="M512 541 A111 111 0 0 1 734 541"/>
+  </g>
+  <g fill="#F6F2E9">
+    <path d="M242 541 V682 a48 48 0 0 0 96 0 V541 Z"/>
+    <path d="M464 541 V682 a48 48 0 0 0 96 0 V541 Z"/>
+    <path d="M686 541 V682 a48 48 0 0 0 96 0 V541 Z"/>
+  </g>
+  <circle cx="512" cy="296" r="48" fill="#E8573F"/>
+</svg>

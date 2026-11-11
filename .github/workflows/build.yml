@@ -1,0 +1,177 @@
+name: build
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+          - os: macos-15
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: launcher/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # 在当前平台装依赖，拿到对应平台的原生模块（webview / sqlite 等）
+      - name: Install app dependencies
+        run: npm ci
+
+      # esbuild 把 src 的 TS 打包成单个 app.mjs（依赖保持 external，运行时从 node_modules 加载）
+      - name: Build app bundle
+        run: npm run build
+
+      # 把图标编进 exe 资源；同时会生成 rsrc_windows_*.syso 供 go build 自动嵌入
+      - name: Embed Windows icon
+        if: matrix.goos == 'windows'
+        working-directory: launcher
+        run: go run github.com/tc-hib/go-winres@latest simply --icon ../assets/icon.png --product-name Mino --file-description Mino
+
+      - name: Build launcher and package
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+
+          BIN="Mino"
+          [ "$GOOS" = "windows" ] && BIN="Mino.exe"
+          NAME="Mino-$GOOS-$GOARCH"
+
+          # 业务代码与绝大部分依赖已由 esbuild 打进 app.mjs，这里只带运行时仍需落盘的部分：
+          # 原生模块（better-sqlite3 及其 bindings、webview 平台包）与前端经 mino:// 读取的静态资源
+          stage_runtime_deps() {
+            local dest="$1"
+            mkdir -p "$dest/node_modules"
+            for pkg in better-sqlite3 bindings file-uri-to-path marked dompurify marked-katex-extension @webviewjs/webview; do
+              mkdir -p "$dest/node_modules/$(dirname "$pkg")"
+              cp -R "node_modules/$pkg" "$dest/node_modules/$pkg"
+            done
+            # katex / xterm 只保留 VENDOR 实际引用的文件；字体只带 woff2（三个平台的内核都支持）
+            mkdir -p "$dest/node_modules/katex/dist/fonts" "$dest/node_modules/@xterm/xterm/lib" "$dest/node_modules/@xterm/xterm/css"
+            cp node_modules/katex/dist/katex.min.js node_modules/katex/dist/katex.min.css "$dest/node_modules/katex/dist/"
+            cp node_modules/katex/dist/fonts/*.woff2 "$dest/node_modules/katex/dist/fonts/"
+            cp node_modules/@xterm/xterm/lib/xterm.js "$dest/node_modules/@xterm/xterm/lib/"
+            cp node_modules/@xterm/xterm/css/xterm.css "$dest/node_modules/@xterm/xterm/css/"
+            # 可选依赖按平台自动安装，每个 runner 上只有一个 webview-* 平台包
+            cp -R node_modules/@webviewjs/webview-* "$dest/node_modules/@webviewjs/"
+          }
+
+          case "$GOOS" in
+            linux)
+              (cd launcher && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+                go build -ldflags "-s -w" -o "$BIN" .)
+              APPDIR="dist/Mino.AppDir"
+              mkdir -p "$APPDIR/app"
+              cp "launcher/$BIN" "$APPDIR/AppRun"
+              cp build/app.mjs "$APPDIR/app/app.mjs"
+              cp -R public "$APPDIR/app/"
+              stage_runtime_deps "$APPDIR/app"
+              mkdir -p "$APPDIR/usr/share/icons/hicolor/512x512/apps"
+              cp assets/icon-512.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/mino.png"
+              cp assets/icon-512.png "$APPDIR/mino.png"
+              cp assets/icon-512.png "$APPDIR/.DirIcon"
+              cat > "$APPDIR/Mino.desktop" <<'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=Mino
+          Comment=Mino
+          Icon=mino
+          Exec=AppRun
+          Categories=Utility;
+          Terminal=false
+          DESKTOP
+              wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+              chmod +x appimagetool-x86_64.AppImage
+              ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run "$APPDIR" "$NAME.AppImage"
+              ARCHIVE="$NAME.AppImage"
+              ;;
+
+            windows)
+              (cd launcher && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+                go build -ldflags "-s -w -H windowsgui" -o "$BIN" .)
+              STAGE="dist/$NAME"
+              mkdir -p "$STAGE/app"
+              cp "launcher/$BIN" "$STAGE/"
+              cp build/app.mjs "$STAGE/app/app.mjs"
+              cp -R public "$STAGE/app/"
+              stage_runtime_deps "$STAGE/app"
+              ARCHIVE="$NAME.zip"
+              powershell -NoProfile -Command "Compress-Archive -Path 'dist/$NAME' -DestinationPath '$ARCHIVE' -Force"
+              ;;
+
+            darwin)
+              (cd launcher && CGO_ENABLED=1 GOOS=darwin GOARCH="$GOARCH" \
+                go build -ldflags "-s -w" -o "$BIN" .)
+              APP="dist/Mino.app"
+              mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/MacOS/app"
+              cp "launcher/$BIN" "$APP/Contents/MacOS/Mino"
+              cp build/app.mjs "$APP/Contents/MacOS/app/app.mjs"
+              cp -R public "$APP/Contents/MacOS/app/"
+              stage_runtime_deps "$APP/Contents/MacOS/app"
+              cp assets/icon.icns "$APP/Contents/Resources/Mino.icns"
+              cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key><string>Mino</string>
+              <key>CFBundleDisplayName</key><string>Mino</string>
+              <key>CFBundleExecutable</key><string>Mino</string>
+              <key>CFBundleIconFile</key><string>Mino</string>
+              <key>CFBundleIdentifier</key><string>com.mino.app</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleVersion</key><string>1.0.0</string>
+              <key>CFBundleShortVersionString</key><string>1.0.0</string>
+              <key>LSMinimumSystemVersion</key><string>11.0</string>
+              <key>NSHighResolutionCapable</key><true/>
+              <key>LSUIElement</key><false/>
+          </dict>
+          </plist>
+          PLIST
+              ARCHIVE="$NAME.zip"
+              ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
+              ;;
+          esac
+
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$ARCHIVE" --clobber
+
+      - name: Upload artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mino-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error

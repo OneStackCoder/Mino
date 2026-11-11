@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 308" width="720" height="308" role="img" aria-label="上下文压缩机制示意" font-family="SF Pro Text, PingFang SC, system-ui, sans-serif">
+  <defs>
+    <marker id="mb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1 L7 4 L1 7 Z" fill="#0FDC78"/></marker>
+    <marker id="mn" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1 L7 4 L1 7 Z" fill="#52525B"/></marker>
+  </defs>
+
+  <!-- 卡片背景 -->
+  <rect x="0" y="0" width="720" height="308" rx="14" fill="#F7F7F8"/>
+
+  <!-- 左：压缩前 -->
+  <text x="40" y="32" font-size="14" font-weight="500" fill="#171717">压缩前（接近上限）</text>
+  <rect x="40" y="48" width="278" height="206" rx="12" fill="#EFEFF2" stroke="#E4E4E7"/>
+  <rect x="60" y="66" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="81" text-anchor="middle" font-size="12" fill="#52525B">系统提示词</text>
+  <rect x="60" y="96" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="111" text-anchor="middle" font-size="12" fill="#171717">user · 较早消息</text>
+  <rect x="60" y="126" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="141" text-anchor="middle" font-size="12" fill="#171717">ai + 工具调用</text>
+  <rect x="60" y="156" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="171" text-anchor="middle" font-size="12" fill="#171717">工具结果（往往最大）</text>
+  <rect x="60" y="186" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="201" text-anchor="middle" font-size="12" fill="#171717">user · 较新消息</text>
+  <rect x="60" y="216" width="238" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="179" y="231" text-anchor="middle" font-size="12" fill="#171717">ai 回复</text>
+
+  <!-- 右：压缩后 -->
+  <text x="422" y="32" font-size="14" font-weight="500" fill="#171717">压缩后（窗口腾出大半）</text>
+  <rect x="422" y="48" width="258" height="206" rx="12" fill="#EFEFF2" stroke="#E4E4E7"/>
+  <rect x="442" y="66" width="214" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="549" y="81" text-anchor="middle" font-size="12" fill="#52525B">系统提示词</text>
+  <rect x="442" y="96" width="214" height="22" rx="11" fill="#E5FFF2" stroke="#0FDC78" stroke-width="1.5"/>
+  <text x="549" y="111" text-anchor="middle" font-size="12" font-weight="500" fill="#004D26">摘要（旧对话总结）</text>
+  <rect x="442" y="126" width="214" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="549" y="141" text-anchor="middle" font-size="12" fill="#171717">user · 较新消息</text>
+  <rect x="442" y="156" width="214" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="549" y="171" text-anchor="middle" font-size="12" fill="#171717">ai 回复</text>
+  <rect x="442" y="186" width="214" height="38" rx="8" fill="none" stroke="#E4E4E7" stroke-dasharray="5 4"/>
+  <text x="549" y="209" text-anchor="middle" font-size="12" fill="#52525B">剩余空间</text>
+
+  <!-- 自动压缩箭头 -->
+  <path d="M328 151 H404" fill="none" stroke="#0FDC78" stroke-width="2" stroke-linecap="round" marker-end="url(#mb)"/>
+  <rect x="328" y="118" width="84" height="22" rx="11" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="370" y="133" text-anchor="middle" font-size="12" font-weight="500" fill="#171717">自动压缩</text>
+  <text x="370" y="180" text-anchor="middle" font-size="12" fill="#52525B">旧消息 → 摘要</text>
+
+  <!-- 循环往复 -->
+  <path d="M551 258 V286 H408" fill="none" stroke="#52525B" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M332 286 H179 V258" fill="none" stroke="#52525B" stroke-width="1.5" stroke-linecap="round" marker-end="url(#mn)"/>
+  <rect x="338" y="276" width="64" height="20" rx="10" fill="#F7F7F8" stroke="#E4E4E7"/>
+  <text x="370" y="290" text-anchor="middle" font-size="12" fill="#52525B">循环往复</text>
+</svg>
