@@ -525,6 +525,15 @@ export function startWebUI(): void {
       resizable: true,
     });
 
+    // Windows 的窗口图标默认取自宿主进程 node.exe，需要显式换成应用图标（传编码后的 PNG 由原生层解码）
+    if (process.platform === "win32") {
+      try {
+        win.setWindowIcon(fs.readFileSync(path.join(ROOT, "public", "icon.png")));
+      } catch {
+        // 图标缺失不影响启动
+      }
+    }
+
     // 注册协议必须在 createWebview 之前
     win.registerProtocol("mino", async (request) => {
       const { pathname } = new URL(request.url);
