@@ -12,7 +12,7 @@ Mino 是一个桌面 AI Agent：Node.js 进程内跑 LangChain.js Agent，用原
 npm install
 npm start          # 直接运行 TypeScript（Node ≥ 24 原生类型剥离，无编译步骤）
 npm run typecheck  # tsc --noEmit，改完 TS 必须跑
-npm run build      # esbuild 打包成 build/app.mjs（仅发布用，依赖 external）
+npm run build      # esbuild 打包成 build/app/app.mjs，并复制、压缩 public/（仅发布用）
 ```
 
 没有测试框架。行为改动需说明手动验证路径（如 `npm start` 后点终端、执行 `exit` 观察页签行为）；无法验证时明确说明，不要声称已验证。

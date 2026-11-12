@@ -36,6 +36,7 @@ sudo apt install libwebkit2gtk-4.1-0 libxdo3 zenity util-linux
 npm install
 npm start                # 打开对话窗口（在「设置 → 模型」里添加模型配置）
 npm run typecheck        # tsc --noEmit 类型检查
+npm run build:local      # 打包到 build/app，并编译本平台 launcher 到 build/（需 Go）
 ```
 
 支持 OpenAI / Anthropic / DeepSeek 及任意 OpenAI 兼容接口（Moonshot、智谱、本地网关等）。

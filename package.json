@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node src/agent.ts",
-    "build": "esbuild src/agent.ts --bundle --platform=node --format=esm --target=node20 --packages=bundle --external:better-sqlite3 --external:@webviewjs/webview --external:@webviewjs/webview-* --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\" --outfile=build/app.mjs",
+    "build": "node esbuild.config.mjs",
+    "build:local": "node esbuild.config.mjs --local",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.6",
     "esbuild": "^0.25.12",
+    "html-minifier-terser": "^7.2.0",
     "typescript": "^7.0.2"
   }
 }
