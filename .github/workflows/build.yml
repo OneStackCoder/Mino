@@ -56,12 +56,16 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          # release 事件取 tag（v1.2.3 → 1.2.3）；手动触发没有 tag，退回 package.json 版本
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
 
           BIN="Mino"
           [ "$GOOS" = "windows" ] && BIN="Mino.exe"
-          NAME="Mino-$GOOS-$GOARCH"
+          # release 事件取 tag（v1.2.3）；手动触发没有 tag，退回 package.json 版本并补 v
+          VER="${TAG_NAME:-v$(node -p "require('./package.json').version")}"
+          NAME="Mino-$VER-$GOOS-$GOARCH"
 
           # 业务代码与绝大部分依赖已由 esbuild 打进 app.mjs，这里只带运行时仍需落盘的部分：
           # 原生模块（better-sqlite3 及其 bindings、webview 平台包）与前端经 mino:// 读取的静态资源
@@ -157,6 +161,7 @@ jobs:
           esac
 
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
 
       - name: Upload to release
         if: github.event_name == 'release'
@@ -169,6 +174,6 @@ jobs:
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: Mino-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: ${{ env.NAME }}
           path: ${{ env.ARCHIVE }}
           if-no-files-found: error
