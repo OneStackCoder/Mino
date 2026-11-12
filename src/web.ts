@@ -183,12 +183,13 @@ function normalizeWorkspaceInput(
 }
 
 // ---------- 校验前端提交的应用设置（代理 / 主题 / 搜索） ----------
-// 搜索设置是否发生变化（变化后需重建 agent 才能生效）：顺序即优先级，顺序变化也要重建
+// 搜索设置是否发生变化（变化后需重建 agent 才能生效）
 function sameSearch(a: SearchSettings, b: SearchSettings): boolean {
   return (
-    a.engines.join() === b.engines.join() &&
-    a.mode === b.mode &&
-    a.bochaApiKey === b.bochaApiKey
+    a.bocha === b.bocha &&
+    a.bochaApiKey === b.bochaApiKey &&
+    a.serpapi === b.serpapi &&
+    a.serpapiApiKey === b.serpapiApiKey
   );
 }
 

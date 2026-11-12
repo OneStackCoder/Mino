@@ -130,11 +130,11 @@ function buildInterruptOn(workspaceDir: string, permission: PermissionLevel): Re
 export function createMinoAgent(config: AgentConfig, workspaceDir: string, permission: PermissionLevel, search: SearchSettings) {
   return createAgent({
     model: buildModel(config),
-    // 计算器 / 时间 / 文件操作（按权限模式管控）/ 信息检索（引擎按设置开关装配），定义见 src/tools.ts
-    tools: createTools(workspaceDir, search),
+    // 计算器 / 时间 / 文件操作（按权限模式管控）/ 信息检索（Bocha 开关与模型商搜索），定义见 src/tools.ts
+    tools: createTools(workspaceDir, search, config),
     systemPrompt:
       "你是一个乐于助人的中文助手。可使用提供的工具（计算、获取时间、文件读写、信息检索）完成任务和回答问题。" +
-      "信息检索时调用一次 web_search（默认 Bing）通常已足够，不要对同一问题反复搜索；需要正文时再用 web_fetch 读取具体链接。" +
+      "信息检索时调用一次 web_search 通常已足够，不要对同一问题反复搜索；需要正文时再用 web_fetch 读取具体链接。" +
       `当前工作区目录为 ${workspaceDir}，相对路径以工作区为基准；` +
       `${PERMISSION_PROMPTS[permission]}涉及文件操作时先确认路径与内容再写入。`,
     // 会话状态（含压缩结果）挂在 SQLite checkpointer 的 thread_id 上，调用方只需传新消息

@@ -6,7 +6,11 @@ import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { tool } from "langchain";
 import { z } from "zod";
-import type { PermissionLevel, SearchSettings } from "./config.ts";
+import type {
+  AgentConfig,
+  PermissionLevel,
+  SearchSettings,
+} from "./config.ts";
 
 // ---------- 工具集：计算 / 文件操作（按工作区构建）/ 信息检索 ----------
 // agent.ts 通过 `import { createTools } from "./tools.ts"` 装配；新增工具在本文件追加即可。
@@ -172,30 +176,23 @@ function createFileTools(workspace: string) {
   return [readFileTool, writeFileTool, listDirectoryTool];
 }
 
-// 装配完整工具集：文件操作按权限模式管控；搜索引擎按设置开关装配进 web_search
-export function createTools(workspace: string, search: SearchSettings) {
+// 装配完整工具集：文件操作按权限模式管控；搜索引擎按设置开关装配进 web_search。
+// 需要激活模型的配置（模型商搜索复用它的 API Key / Base URL），agent 重建时随之更新
+export function createTools(
+  workspace: string,
+  search: SearchSettings,
+  config: AgentConfig
+) {
   return [
     calculator,
     getCurrentTime,
     ...createFileTools(workspace),
-    createWebSearchTool(search),
+    createWebSearchTool(search, config),
     webFetchTool,
   ];
 }
 
 // ========== 信息检索类 ==========
-
-// 标签与 HTML 实体清理（Bing RSS 解析用）
-const decodeEntities = (s: string) =>
-  s
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .trim();
 
 // 单条搜索结果（各引擎统一的结构化返回，便于在工具层合并 / 去重 / 排序）
 interface SearchHit {
@@ -204,86 +201,166 @@ interface SearchHit {
   url: string;
 }
 
-// Bing 搜索核心逻辑（免 API Key，走 RSS 结果，便于稳定解析），默认引擎
-// 注意：Bing 免费端点对「人名 + 主题词」类多词中文查询有时会分词失效（返回无关结果），
-// 此时可开启 google / bocha 引擎作为更高优先级的补充
-async function searchBing(
+// 模型商搜索接口：复用当前激活模型的 API Key 直接调用其搜索能力。
+// 智谱（web_search）与 DeepSeek（/v1/tools/search）提供独立搜索端点；
+// OpenAI 无独立端点，经 Responses API 挂内置 web_search 工具让模型边搜边答，
+// 再从回答的 url_citation 注解里提取来源，适配成统一的 SearchHit
+async function searchProvider(
   query: string,
   limit: number,
+  config: AgentConfig,
   proxy?: string
 ): Promise<SearchHit[]> {
-  const url =
-    `https://www.bing.com/search?q=${encodeURIComponent(query)}` +
-    `&count=${limit}&format=rss`;
-  const res = await httpFetch(
-    url,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+  if (!config.apiKey) throw new Error("当前模型未配置 API Key");
+  if (config.provider === "deepseek") {
+    // 用户填的 Base URL 可能带 /v1（OpenAI 兼容习惯），剥掉后统一拼端点
+    const base = (config.baseUrl || "https://api.deepseek.com")
+      .replace(/\/+$/, "")
+      .replace(/\/v1$/, "");
+    const res = await httpFetch(
+      `${base}/v1/tools/search`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({ query, count: limit }),
       },
+      proxy,
+      15000
+    );
+    if (!res.ok)
+      throw new Error(
+        res.status === 401 ? "HTTP 401（API Key 无效）" : `HTTP ${res.status}`
+      );
+    const data = (await res.json()) as {
+      results?: Array<{ title?: string; url?: string; summary?: string }>;
+    };
+    return (data.results ?? [])
+      .map((h) => ({
+        title: h.title ?? "",
+        // DeepSeek 的 summary 很长，保留 1000 字符，其余截断避免撑爆上下文
+        desc: (h.summary ?? "").slice(0, 1000),
+        url: h.url ?? "",
+      }))
+      .filter((h) => h.title || h.url);
+  }
+  if (config.provider === "openai") {
+    const base = (config.baseUrl || "https://api.openai.com/v1").replace(
+      /\/+$/,
+      ""
+    );
+    const res = await httpFetch(
+      `${base}/responses`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          tools: [{ type: "web_search" }],
+          input: query,
+        }),
+      },
+      proxy,
+      60000 // 模型带搜索的完整推理，耗时远超普通搜索接口
+    );
+    if (!res.ok) {
+      // 模型不支持 web_search 等错误以 400 返回，带上服务端信息便于诊断
+      let detail = "";
+      try {
+        detail =
+          ((await res.json()) as { error?: { message?: string } }).error
+            ?.message ?? "";
+      } catch {
+        /* 响应体不是 JSON 时忽略 */
+      }
+      throw new Error(
+        res.status === 401
+          ? "HTTP 401（API Key 无效）"
+          : `HTTP ${res.status}${detail ? `（${detail}）` : ""}`
+      );
+    }
+    const data = (await res.json()) as {
+      output?: Array<{
+        type?: string;
+        content?: Array<{
+          type?: string;
+          text?: string;
+          annotations?: Array<{
+            type?: string;
+            title?: string;
+            url?: string;
+          }>;
+        }>;
+      }>;
+    };
+    let text = "";
+    const seen = new Set<string>();
+    const hits: SearchHit[] = [];
+    for (const item of data.output ?? []) {
+      if (item.type !== "message") continue;
+      for (const block of item.content ?? []) {
+        if (block.type === "output_text" && block.text) text += block.text;
+        for (const a of block.annotations ?? []) {
+          if (a.type !== "url_citation" || !a.url || seen.has(a.url)) continue;
+          seen.add(a.url);
+          hits.push({ title: a.title ?? a.url, desc: "", url: a.url });
+        }
+      }
+    }
+    // 引用来源在前，模型生成的搜索综述殿后（同样截断 1000 字符）
+    if (text || hits.length)
+      hits.push({ title: "搜索结果综述", desc: text.slice(0, 1000), url: "" });
+    return hits;
+  }
+  if (config.provider !== "zhipu")
+    throw new Error(
+      "当前模型商未提供搜索接口（目前智谱、DeepSeek、OpenAI 支持）"
+    );
+  // 智谱 OpenAI 兼容端点为 /api/paas/v4（chat/completions 挂在其下），web_search 同级
+  const base = (
+    config.baseUrl || "https://open.bigmodel.cn/api/paas/v4"
+  ).replace(/\/+$/, "");
+  const res = await httpFetch(
+    `${base}/web_search`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        search_engine: "search_std",
+        search_query: query,
+        count: limit,
+        search_recency_filter: "noLimit",
+      }),
     },
     proxy,
     15000
   );
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const xml = await res.text();
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
-    .map((m) => m[1])
-    .slice(0, limit)
-    .map((block) => {
-      const title = decodeEntities(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "");
-      const link = decodeEntities(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] ?? "");
-      const desc = decodeEntities(
-        block.match(/<description>([\s\S]*?)<\/description>/)?.[1] ?? ""
-      );
-      return { title, desc, url: link };
-    })
-    .filter((h) => h.title || h.url);
-}
-
-// Google 搜索核心逻辑（免 API Key）：普通 HTML 搜索有反爬拦截，走 News RSS 才能稳定拿到结构化结果
-async function searchGoogle(
-  query: string,
-  limit: number,
-  proxy?: string
-): Promise<SearchHit[]> {
-  // 按查询语言切换地区参数，中文结果质量更好
-  const cjk = /[\u4e00-\u9fff]/.test(query);
-  const url =
-    `https://news.google.com/rss/search?q=${encodeURIComponent(query)}` +
-    (cjk ? `&hl=zh-CN&gl=CN&ceid=CN:zh-Hans` : `&hl=en-US&gl=US&ceid=US:en`);
-  const res = await httpFetch(
-    url,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      },
-    },
-    proxy,
-    15000
-  );
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const xml = await res.text();
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
-    .map((m) => m[1])
-    .slice(0, limit)
-    .map((block) => {
-      const title = decodeEntities(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "");
-      const link = decodeEntities(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] ?? "");
-      const source = decodeEntities(
-        block.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] ?? ""
-      );
-      const pubDate = decodeEntities(
-        block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] ?? ""
-      );
-      return {
-        title,
-        desc: [source, pubDate].filter(Boolean).join(" · "),
-        url: link,
-      };
-    })
+  if (!res.ok)
+    throw new Error(
+      res.status === 401 ? "HTTP 401（API Key 无效）" : `HTTP ${res.status}`
+    );
+  const data = (await res.json()) as {
+    response?: Array<{
+      name?: string;
+      url?: string;
+      snippet?: string;
+      snippet_content?: string;
+    }>;
+  };
+  return (data.response ?? [])
+    .map((h) => ({
+      title: h.name ?? "",
+      desc: h.snippet_content || h.snippet || "",
+      url: h.url ?? "",
+    }))
     .filter((h) => h.title || h.url);
 }
 
@@ -310,7 +387,7 @@ async function searchBocha(
   if (!res.ok)
     throw new Error(
       res.status === 401
-        ? "HTTP 401（Bocha API Key 无效，请在设置中检查）"
+        ? "HTTP 401（博查 API Key 无效，请在设置中检查）"
         : `HTTP ${res.status}`
     );
   const data = (await res.json()) as {
@@ -334,115 +411,119 @@ async function searchBocha(
     .filter((h) => h.title || h.url);
 }
 
-const ENGINE_LABELS: Record<string, string> = {
-  bing: "Bing",
-  google: "Google",
-  bocha: "Bocha",
-};
-
-// 工厂：统一搜索入口，引擎优先级与搜索模式都来自设置
-// - serial 接力：按优先级依次尝试，某引擎报错 / 无结果时自动切到下一个
-// - parallel 聚合：并行搜索全部启用引擎，结果合并去重排序后返回
-// 不给模型暴露引擎参数：调用方式由用户设置决定，避免模型乱传值触发校验失败与重试
-function createWebSearchTool(search: SearchSettings) {
-  // bocha 需要用户填 Key；没填时不作为可用引擎，避免必然 401 的调用
-  const enabled = search.engines.filter(
-    (e) => e !== "bocha" || !!search.bochaApiKey
+// SerpAPI 搜索核心逻辑（付费 API，Key 由用户在设置中填写；返回 Google 搜索结果，国内通常需代理）
+async function searchSerpapi(
+  query: string,
+  limit: number,
+  apiKey: string,
+  proxy?: string
+): Promise<SearchHit[]> {
+  const params = new URLSearchParams({
+    engine: "google",
+    q: query,
+    num: String(limit),
+    api_key: apiKey,
+  });
+  const res = await httpFetch(
+    `https://serpapi.com/search.json?${params}`,
+    { method: "GET" },
+    proxy,
+    20000
   );
-  const runners: Record<
-    string,
-    (query: string, limit: number, proxy?: string) => Promise<SearchHit[]>
-  > = {
-    bing: searchBing,
-    google: searchGoogle,
-    bocha: (q, n, p) => searchBocha(q, n, search.bochaApiKey, p),
+  if (!res.ok)
+    throw new Error(
+      res.status === 401
+        ? "HTTP 401（SerpAPI API Key 无效，请在设置中检查）"
+        : `HTTP ${res.status}`
+    );
+  const data = (await res.json()) as {
+    organic_results?: Array<{
+      title?: string;
+      link?: string;
+      snippet?: string;
+    }>;
   };
-  // 单引擎调用不抛异常：失败转为 { error }，由级联 / 合并逻辑消化
-  const tryEngine = async (
-    e: string,
-    q: string,
-    n: number,
-    p?: string
-  ): Promise<{ hits: SearchHit[]; error?: string }> => {
-    try {
-      return { hits: await runners[e](q, n, p) };
-    } catch (err) {
-      return { hits: [], error: (err as Error).message };
-    }
-  };
-  // URL 归一化（去锚点与尾斜杠）作为跨引擎去重键，无 URL 时退化为标题去重
-  const normalizeUrl = (u: string) => u.replace(/#.*$/, "").replace(/\/+$/, "");
-  // 合并去重排序：按各引擎内部名次轮转交错（优先级高的引擎每轮靠前），
-  // 同一 URL 只保留各引擎中更靠前的那条
-  const mergeHits = (groups: { engine: string; hits: SearchHit[] }[]) => {
-    const seen = new Set<string>();
-    const merged: { engine: string; hit: SearchHit }[] = [];
-    const maxLen = Math.max(0, ...groups.map((g) => g.hits.length));
-    for (let i = 0; i < maxLen; i++) {
-      for (const g of groups) {
-        const hit = g.hits[i];
-        if (!hit) continue;
-        const key = normalizeUrl(hit.url) || hit.title;
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        merged.push({ engine: g.engine, hit });
-      }
-    }
-    return merged;
-  };
-  const formatHits = (merged: { engine: string; hit: SearchHit }[]) =>
-    merged
-      .map(
-        ({ engine, hit }) =>
-          `【${hit.title}】（${ENGINE_LABELS[engine]}）\n${hit.desc}\n${hit.url}`
-      )
-      .join("\n\n");
-  const cascade = async (chain: string[], q: string, n: number, p?: string) => {
-    if (!chain.length)
-      return "没有可用的搜索引擎，请在设置的「搜索」页签中开启。";
-    const errors: string[] = [];
-    for (const e of chain) {
-      const { hits, error } = await tryEngine(e, q, n, p);
-      if (hits.length) return formatHits(mergeHits([{ engine: e, hits }]));
-      errors.push(`${ENGINE_LABELS[e]}：${error || "没有找到相关结果"}`);
-    }
-    return `所有引擎均未能返回结果，可稍后重试或换个关键词。\n${errors.join("\n")}`;
-  };
-  const desc =
-    enabled.length
-      ? `搜索互联网信息。已启用引擎（按优先级）：${enabled.map((e) => ENGINE_LABELS[e]).join("、")}。` +
-        (search.mode === "parallel"
-          ? `当前为聚合模式：一次调用即并行搜索全部引擎，结果自动合并去重排序。`
-          : `当前为接力模式：一次调用按优先级依次尝试，某个引擎失败或没有结果时自动用下一个。`) +
-        `一次调用通常已包含足够信息，不需要对同一问题反复搜索。`
-      : `搜索互联网信息。（当前未启用任何搜索引擎，请在设置中开启。）`;
+  return (data.organic_results ?? [])
+    .map((h) => ({
+      title: h.title ?? "",
+      desc: h.snippet ?? "",
+      url: h.link ?? "",
+    }))
+    .filter((h) => h.title || h.url);
+}
+
+// 工厂：统一搜索入口。默认用当前模型商的搜索接口（复用其 API Key）；
+// 用户启用付费引擎（博查 / SerpAPI）后按卡片顺序依次尝试，失败或无结果时自动回落模型商搜索。
+// 不给模型暴露引擎参数：调用方式由用户设置决定，避免模型乱传值触发校验失败与重试
+function createWebSearchTool(search: SearchSettings, config: AgentConfig) {
+  // 博查在前：国内可直连；SerpAPI 是 Google 结果，国内多数场景需代理
+  const paidEngines: Array<{
+    name: string;
+    run: (query: string, limit: number, proxy?: string) => Promise<SearchHit[]>;
+  }> = [];
+  if (search.bocha && search.bochaApiKey)
+    paidEngines.push({
+      name: "博查",
+      run: (q, n, p) => searchBocha(q, n, search.bochaApiKey, p),
+    });
+  if (search.serpapi && search.serpapiApiKey)
+    paidEngines.push({
+      name: "SerpAPI",
+      run: (q, n, p) => searchSerpapi(q, n, search.serpapiApiKey, p),
+    });
+  const providerReady =
+    (config.provider === "zhipu" ||
+      config.provider === "deepseek" ||
+      config.provider === "openai") &&
+    !!config.apiKey;
+  const formatHits = (hits: SearchHit[]) =>
+    hits.map((h) => `【${h.title}】\n${h.desc}\n${h.url}`).join("\n\n");
+  const desc = paidEngines.length
+    ? "搜索互联网信息。优先使用已启用的付费搜索引擎，失败时自动回落模型商搜索接口。一次调用通常已包含足够信息，不需要对同一问题反复搜索。"
+    : providerReady
+      ? "搜索互联网信息（当前模型商的搜索接口）。一次调用通常已包含足够信息，不需要对同一问题反复搜索。"
+      : "搜索互联网信息。（当前模型商未提供搜索接口，可在设置中启用博查或 SerpAPI 搜索。）";
   return tool(
     async ({ query, limit, proxy }) => {
       // 参数一律在运行时归一化：模型传 null / 越界值时给出合理默认，而不是抛 schema 错误
       const count =
         Number.isInteger(limit) && limit! >= 1 && limit! <= 10 ? limit! : 5;
       const via = proxy ?? undefined;
-      if (!enabled.length)
-        return "没有可用的搜索引擎，请在设置的「搜索」页签中开启。";
-      if (search.mode !== "parallel")
-        return cascade(enabled, query, count, via);
-      const results = await Promise.all(
-        enabled.map((e) => tryEngine(e, query, count, via))
-      );
-      const groups = enabled
-        .map((e, i) => ({ engine: e, hits: results[i].hits }))
-        .filter((g) => g.hits.length);
-      const errors = enabled
-        .map((e, i) => (results[i].error ? `${ENGINE_LABELS[e]}：${results[i].error}` : ""))
-        .filter(Boolean);
-      if (!groups.length)
-        return `所有引擎均未能返回结果，可稍后重试或换个关键词。\n${errors.join("\n")}`;
-      const merged = mergeHits(groups);
-      const header = `已合并 ${groups.length} 个引擎的结果（去重后 ${merged.length} 条）：\n\n`;
-      const errNote = errors.length
-        ? `\n\n（以下引擎未返回结果：${errors.join("；")}）`
-        : "";
-      return header + formatHits(merged) + errNote;
+      // 已启用的付费引擎按序尝试，任一成功即返回；全部失败再回落模型商搜索，两边都败才报错
+      if (paidEngines.length) {
+        const failures: string[] = [];
+        for (const engine of paidEngines) {
+          try {
+            const hits = await engine.run(query, count, via);
+            if (hits.length) {
+              const note = failures.length
+                ? `搜索引擎：${engine.name}\n（${failures.join("；")}；已切换）\n\n`
+                : `搜索引擎：${engine.name}\n\n`;
+              return `${note}${formatHits(hits)}`;
+            }
+            failures.push(`${engine.name}：没有找到相关结果`);
+          } catch (err) {
+            failures.push(`${engine.name}：${(err as Error).message}`);
+          }
+        }
+        let providerError = "";
+        try {
+          const hits = await searchProvider(query, count, config, via);
+          if (hits.length)
+            return `搜索引擎：模型商搜索\n（${failures.join("；")}；已回落模型商搜索）\n\n${formatHits(hits)}`;
+          providerError = "没有找到相关结果";
+        } catch (err) {
+          providerError = (err as Error).message;
+        }
+        return `付费引擎与模型商搜索均未返回结果，可稍后重试或换个关键词。\n${failures.join("\n")}\n模型商搜索：${providerError}`;
+      }
+      try {
+        const hits = await searchProvider(query, count, config, via);
+        if (hits.length) return `搜索引擎：模型商搜索\n\n${formatHits(hits)}`;
+        return "没有找到相关结果，可换个关键词重试。";
+      } catch (err) {
+        return `搜索失败：${(err as Error).message}。可在设置中启用博查或 SerpAPI 搜索。`;
+      }
     },
     {
       name: "web_search",
