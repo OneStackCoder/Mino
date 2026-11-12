@@ -30,6 +30,8 @@
     --danger: #d1242f;
     --danger-hover: #b01b25;
     --danger-soft: #fdebec;
+    --ok: #16a34a;
+    --ok-soft: rgba(22, 163, 74, .07);
     --code-bg: #f6f8fa;
     --code-inline-bg: #f0f2f4;
     --think-bg: #f8f9fb;
@@ -63,6 +65,8 @@
     --danger: #f0506e;
     --danger-hover: #d63c52;
     --danger-soft: #3a1f24;
+    --ok: #3fb950;
+    --ok-soft: rgba(63, 185, 80, .10);
     --code-bg: #16191e;
     --code-inline-bg: #2a2f37;
     --think-bg: #161a1f;
@@ -621,6 +625,68 @@
   @keyframes model-spin { to { transform: rotate(360deg); } }
   .tab-panel { padding: 4px 0; }
   .tab-panel[hidden] { display: none; }
+  /* 搜索模式下拉：与引擎卡片同一套观感（圆角、描边、内箭头），并独占一行留出间距 */
+  #searchMode {
+    -webkit-appearance: none; appearance: none;
+    display: block; width: 100%; margin-bottom: 12px;
+    padding: 8px 30px 8px 11px;
+    font-family: inherit; font-size: 12.5px; line-height: 1.3; color: var(--text);
+    background-color: var(--panel);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b949e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; background-size: 12px;
+    border: 1px solid var(--border-strong); border-radius: 9px;
+    cursor: pointer; transition: border-color .15s, background-color .15s;
+  }
+  #searchMode:hover { background-color: var(--hover); border-color: var(--text-3); }
+  #searchMode:focus { outline: none; border-color: var(--ok); }
+  /* 引擎列表上方的小标题与说明 */
+  .search-section-title { margin-top: 8px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .search-section-desc {
+    margin: 2px 0 8px; font-size: 10.5px; line-height: 1.5; color: var(--text-3);
+  }
+  /* 搜索引擎列表：单行紧凑卡片，右侧把手（紧邻勾选）拖动排序，顺序即优先级 */
+  .search-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .search-card {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border: 1px solid var(--border-strong);
+    border-radius: 9px; cursor: pointer; background: var(--panel);
+    font-family: inherit; transition: border-color .15s, background .15s;
+  }
+  .search-card:hover { background: var(--hover); }
+  .search-card input { display: none; }
+  .search-card-icon {
+    flex: none; width: 18px; height: 18px; border-radius: 5px;
+    overflow: hidden; display: flex;
+  }
+  .search-card-icon svg { width: 100%; height: 100%; display: block; }
+  .search-card-body { display: flex; align-items: baseline; gap: 6px; flex: 1; min-width: 0; }
+  .search-card-title { flex: none; font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .search-card-note {
+    font-size: 10.5px; color: var(--text-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .search-card.active { border-color: var(--ok); background: var(--ok-soft); }
+  /* Bocha 未填 Key：置灰且不可点击启用（拖动仍保留） */
+  .search-card.locked { opacity: .55; }
+  .search-card.locked .search-card-body { cursor: not-allowed; }
+  .search-card.locked:hover { background: transparent; }
+  .search-card.locked .search-card-check { display: none; }
+  .search-card-drag {
+    flex: none; display: flex; padding: 4px 2px; border-radius: 5px;
+    color: var(--text-3); cursor: grab; touch-action: none;
+  }
+  .search-card-drag:hover { background: var(--hover); color: var(--text-2); }
+  .search-card-drag svg { width: 13px; height: 13px; display: block; }
+  .search-card-check {
+    flex: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--ok); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .15s;
+  }
+  .search-card.active .search-card-check { opacity: 1; }
+  .search-card-check svg { width: 10px; height: 10px; display: block; }
+  .search-card.dragging { opacity: .5; }
+  .search-key { margin-top: 4px; }
   .about-head { display: flex; align-items: center; gap: 14px; }
   .about-logo { width: 56px; height: 56px; flex: none; }
   .about-name { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
@@ -859,11 +925,12 @@
         stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
     </button>
     <h2>设置</h2>
-    <div class="sub">模型 / 代理 / 通用保存在本机 ~/.config/Mino/，仅本进程使用</div>
+    <div class="sub">模型 / 代理 / 搜索 / 通用保存在本机 ~/.config/Mino/，仅本进程使用</div>
     <div class="settings-body">
       <nav class="settings-nav">
         <button class="snav active" data-tab="model">模型</button>
         <button class="snav" data-tab="proxy">代理</button>
+        <button class="snav" data-tab="search">搜索</button>
         <button class="snav" data-tab="appearance">通用</button>
         <button class="snav" data-tab="about">关于</button>
       </nav>
@@ -887,7 +954,21 @@
       <input id="proxyUsername" placeholder="无认证可留空" autocomplete="off" />
       <label for="proxyPassword">密码（可选）</label>
       <input id="proxyPassword" type="password" placeholder="无认证可留空" autocomplete="off" />
-      <div class="hint">主机留空表示直连；代理对模型请求与信息检索（维基 / Bing / 网页抓取）统一生效</div>
+      <div class="hint">主机留空表示直连；代理对模型请求与信息检索（Google / Bocha / 网页抓取）统一生效</div>
+    </div>
+    <div class="tab-panel" data-panel="search" hidden>
+      <label for="searchMode">搜索模式</label>
+      <select id="searchMode">
+        <option value="serial">接力模式 · 按优先级依次尝试，命中即止</option>
+        <option value="parallel">聚合模式 · 并行搜索全部引擎，合并去重</option>
+      </select>
+      <div class="search-section-title">搜索引擎</div>
+      <div class="search-section-desc">卡片点亮表示启用；拖动右侧把手调整顺序，接力模式下靠前的引擎优先使用，失败或没有结果时自动切下一个，聚合模式下所有启用的引擎同时搜索</div>
+      <div class="search-list" id="searchEngineList"></div>
+      <div class="search-key">
+        <label for="bochaApiKey">Bocha API Key</label>
+        <input id="bochaApiKey" type="password" placeholder="在 open.bochaai.com 申请" autocomplete="off" />
+      </div>
     </div>
     <div class="tab-panel" data-panel="appearance" hidden>
       <label>界面主题</label>
@@ -1044,6 +1125,9 @@
   const proxyPort = document.getElementById('proxyPort');
   const proxyUsername = document.getElementById('proxyUsername');
   const proxyPassword = document.getElementById('proxyPassword');
+  const searchEngineList = document.getElementById('searchEngineList');
+  const searchMode = document.getElementById('searchMode');
+  const bochaApiKey = document.getElementById('bochaApiKey');
   const themeOptions = Array.from(document.querySelectorAll('.theme-option'));
   const fontSizeRange = document.getElementById('fontSizeRange');
   const fontSizeVal = document.getElementById('fontSizeVal');
@@ -1217,11 +1301,126 @@
     proxyPassword.value = p ? p.password : '';
   }
 
+  // 搜索引擎元数据：id 与后端 SearchSettings.engines 对应，图标为内联 SVG（离线可用）
+  const SEARCH_ENGINE_META = [
+    {
+      id: 'bing', name: 'Bing', note: '微软必应搜索，国内可直连',
+      icon: '<svg viewBox="0 0 24 24"><path fill="#008373" d="M5 2.2l11.5 4.1v7.2c0 4.1-2.8 6.9-6.8 6.9-1 0-2-.2-2.9-.7l2.2-3.6c.3.1.5.1.8.1 1.4 0 2.5-1.1 2.5-2.7V7.9L5 5.7z"/><path fill="#00A99A" d="M5 2.2v19l4-2.4V7.9z" opacity=".85"/></svg>',
+    },
+    {
+      id: 'google', name: 'Google', note: 'Google News 新闻检索，国内需配置代理',
+      icon: '<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.928z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.216l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.928z"/></svg>',
+    },
+    {
+      id: 'bocha', name: 'Bocha 博查', note: '付费搜索，国内可直连，需 API Key',
+      icon: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" fill="#3D5AFE"/><path fill="#fff" d="M8.2 6.5h4.1c1.9 0 3 1 3 2.5 0 1-.5 1.7-1.4 2.1 1.2.3 2 1.2 2 2.6 0 1.9-1.4 3-3.6 3H8.2zm2 4h1.9c.8 0 1.3-.4 1.3-1s-.5-1-1.3-1h-1.9zm0 4.2h2.3c.9 0 1.5-.4 1.5-1.1 0-.8-.6-1.2-1.5-1.2h-2.3z"/></svg>',
+    },
+  ];
+  const SEARCH_CHECK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6" /></svg>';
+  const SEARCH_DRAG_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5.5" cy="3.5" r="1.4"/><circle cx="10.5" cy="3.5" r="1.4"/><circle cx="5.5" cy="8" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="5.5" cy="12.5" r="1.4"/><circle cx="10.5" cy="12.5" r="1.4"/></svg>';
+
+  // 渲染引擎卡片：启用的按优先级在前，未启用的按默认顺序追加在后面
+  // Bocha 是付费接口，必须填写 API Key 才能启用；未填时卡片置灰且点击无效
+  const bochaLocked = () => !bochaApiKey.value.trim();
+  function renderSearchEngines(enabledIds) {
+    const known = SEARCH_ENGINE_META.map((e) => e.id);
+    const enabled = (enabledIds || []).filter(
+      (id) => known.includes(id) && !(id === 'bocha' && bochaLocked())
+    );
+    const order = [...enabled, ...known.filter((id) => !enabled.includes(id))];
+    searchEngineList.innerHTML = '';
+    for (const id of order) {
+      const meta = SEARCH_ENGINE_META.find((e) => e.id === id);
+      const locked = id === 'bocha' && bochaLocked();
+      // 用 div 而非 label：.dialog label 的 display/margin 会覆盖卡片布局
+      const card = document.createElement('div');
+      card.className = 'search-card' + (enabled.includes(id) ? ' active' : '') + (locked ? ' locked' : '');
+      card.dataset.engine = id;
+      card.innerHTML =
+        '<input type="checkbox"' + (enabled.includes(id) ? ' checked' : '') + ' />' +
+        '<span class="search-card-icon">' + meta.icon + '</span>' +
+        '<span class="search-card-body"><span class="search-card-title">' + meta.name + '</span><span class="search-card-note">' + (locked ? '需先填写下方 API Key 才能启用' : meta.note) + '</span></span>' +
+        '<span class="search-card-drag" title="拖动调整优先级">' + SEARCH_DRAG_SVG + '</span>' +
+        '<span class="search-card-check">' + SEARCH_CHECK_SVG + '</span>';
+      const input = card.querySelector('input');
+      // 点卡片本体切换启用态；拖动把手（.search-card-drag）不触发
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.search-card-drag')) return;
+        if (locked) {
+          settingsErr.textContent = 'Bocha 需要填写 API Key 后才能启用';
+          bochaApiKey.focus();
+          return;
+        }
+        input.checked = !input.checked;
+        card.classList.toggle('active', input.checked);
+      });
+      searchEngineList.appendChild(card);
+    }
+  }
+  // 已勾选的引擎（按 DOM 顺序即优先级）；Bocha 缺 Key 时不计入
+  const checkedEngines = () =>
+    Array.from(searchEngineList.querySelectorAll('.search-card'))
+      .filter((c) => c.querySelector('input').checked)
+      .map((c) => c.dataset.engine)
+      .filter((id) => id !== 'bocha' || !bochaLocked());
+  // 填写/清空 Key 时重组卡片：清空 Key 自动取消 Bocha 的启用态
+  bochaApiKey.addEventListener('input', () => {
+    settingsErr.textContent = '';
+    renderSearchEngines(checkedEngines());
+  });
+
+  // 拖拽排序：用指针事件实现（webview 对 HTML5 draggable 支持不全，拖不动）；
+  // 拖动期间按指针 Y 坐标实时插入，松手即最终顺序
+  let searchDragCard = null;
+  searchEngineList.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.search-card-drag');
+    if (!handle) return;
+    const card = handle.closest('.search-card');
+    if (!card) return;
+    // 阻止 label 默认行为，避免点把手时切换勾选
+    e.preventDefault();
+    searchDragCard = card;
+    card.classList.add('dragging');
+    const onMove = (ev) => {
+      if (!searchDragCard) return;
+      const others = Array.from(searchEngineList.querySelectorAll('.search-card'))
+        .filter((c) => c !== searchDragCard);
+      let inserted = false;
+      for (const c of others) {
+        const r = c.getBoundingClientRect();
+        if (ev.clientY < r.top + r.height / 2) {
+          searchEngineList.insertBefore(searchDragCard, c);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) searchEngineList.appendChild(searchDragCard);
+    };
+    const onUp = () => {
+      if (searchDragCard) searchDragCard.classList.remove('dragging');
+      searchDragCard = null;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  });
+
+  function fillSearchFields(s) {
+    if (!s) return;
+    renderSearchEngines(s.engines || []);
+    searchMode.value = s.mode || 'serial';
+    bochaApiKey.value = s.bochaApiKey || '';
+  }
+
   function applySettings(s) {
     activeSettings = s;
     selectedTheme = s.theme;
     selectedFontSize = s.fontSize ?? 16;
     fillProxyFields(s.proxy);
+    fillSearchFields(s.search);
     for (const opt of themeOptions) {
       const v = opt.dataset.value;
       opt.querySelector('input').checked = (v === s.theme);
@@ -1419,6 +1618,12 @@
         },
         theme: selectedTheme,
         fontSize: selectedFontSize,
+        search: {
+          // DOM 顺序即优先级，只保存勾选（启用）的引擎；Bocha 缺 Key 时不计入
+          engines: checkedEngines(),
+          mode: searchMode.value,
+          bochaApiKey: bochaApiKey.value.trim(),
+        },
       });
       applySettings(s);
     } catch (err) {

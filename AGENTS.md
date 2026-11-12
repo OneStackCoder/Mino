@@ -21,7 +21,7 @@ npm run build      # esbuild 打包成 build/app.mjs（仅发布用，依赖 ext
 
 - `src/agent.ts`：`createMinoAgent(config, workspaceDir, permission)` 构建 Agent、模型工厂、权限提示词、工具拦截。
 - `src/config.ts`：配置读写、`CONFIG_DIR`、`DEFAULT_WORKSPACE_DIR`、`PermissionLevel` 等唯一来源。
-- `src/tools.ts`：LangChain 工具（read/write/list、calculator、时间、wiki/bing 搜索）。
+- `src/tools.ts`：LangChain 工具（read/write/list、calculator、时间、web_search 统一搜索、网页抓取）。搜索引擎（bing / google / bocha）与优先级由 `settings.json` 的 search.engines 数组定义，auto 按优先级级联（失败自动切下一个启用引擎）。
 - `src/web.ts`：webview 宿主、`window.MinoAgent` RPC、事件推送、静态资源白名单、内嵌终端后端。
 - `public/index.html`：全部前端（原生 JS，单文件，无构建）。
 - `launcher/`：Go 启动器（开窗、目录选择、打包校验）。

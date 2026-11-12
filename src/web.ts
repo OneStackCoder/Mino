@@ -18,6 +18,7 @@ import {
   saveModelProfiles,
   loadSettings,
   saveSettings,
+  parseSearch,
   MODEL_CATALOG,
   PERMISSION_LEVELS,
   SESSIONS_FILE,
@@ -31,6 +32,7 @@ import {
   type PermissionLevel,
   type ProxyConfig,
   type ProxyProtocol,
+  type SearchSettings,
   type Theme,
   type WorkspaceMeta,
   type WorkspacesState,
@@ -180,7 +182,16 @@ function normalizeWorkspaceInput(
   return { name: name || path.basename(dir) || dir, dir };
 }
 
-// ---------- 校验前端提交的应用设置（代理 / 主题） ----------
+// ---------- 校验前端提交的应用设置（代理 / 主题 / 搜索） ----------
+// 搜索设置是否发生变化（变化后需重建 agent 才能生效）：顺序即优先级，顺序变化也要重建
+function sameSearch(a: SearchSettings, b: SearchSettings): boolean {
+  return (
+    a.engines.join() === b.engines.join() &&
+    a.mode === b.mode &&
+    a.bochaApiKey === b.bochaApiKey
+  );
+}
+
 // current 作为兜底：前端漏传字段时保留现有值，避免静默降级
 function normalizeSettingsInput(input: unknown, current: AppSettings): AppSettings {
   const m =
@@ -209,7 +220,13 @@ function normalizeSettingsInput(input: unknown, current: AppSettings): AppSettin
       : NaN;
   const fontSize = fsInput >= 12 && fsInput <= 20 ? fsInput : current.fontSize;
   // 面板宽度由专用 RPC setPanelWidth 维护；普通 setSettings（改主题/代理/字号）不得丢失它
-  return { proxy, theme, panelWidth: current.panelWidth, fontSize };
+  return {
+    proxy,
+    theme,
+    panelWidth: current.panelWidth,
+    fontSize,
+    search: m.search === undefined ? current.search : parseSearch(m.search),
+  };
 }
 
 // 推送给前端 window.onMinoAgentEvent 的事件（与 public/index.html 约定）
@@ -306,9 +323,11 @@ async function runChatStream({
   let confirmCalls: Array<{ name: string; args: unknown; description?: string }> = [];
   try {
     // 首次调用传新消息（完整历史在 agent 内部 state），从中断恢复时传 Command
+    // recursionLimit 提高到 100：搜索 + 逐页抓正文属于正常多步工作流，LangGraph 默认 25 太小
     const stream = await agent.stream(input, {
       configurable: { thread_id: threadId },
       streamMode: ["messages", "updates"],
+      recursionLimit: 100,
     });
     let segStarted = false;
     let reasoningStarted = false;
@@ -620,7 +639,11 @@ export function startWebUI(): void {
     // 文件操作权限：按会话独立设置（新会话默认 workspace），换会话 / 改权限时重建 agent
     let permission: PermissionLevel = "workspace";
     let agentPermission: PermissionLevel = "workspace"; // 当前 agent 构建时的权限，用于判断是否需要重建
-    let agent: MinoAgent | null = config ? createMinoAgent(config, activeWorkspace().path, permission) : null;
+    // 当前 agent 构建时的搜索设置：引擎开关固化在工具集里，变化后需重建（见 syncAgent）
+    let agentSearch: SearchSettings = settings.search;
+    let agent: MinoAgent | null = config ? createMinoAgent(config, activeWorkspace().path, permission, settings.search) : null;
+    // 对话进行中改搜索设置 → 挂起，本轮结束后再重建，避免打断待恢复的权限确认流程
+    let pendingSearchSync = false;
     // 当前会话线程 id：历史与压缩状态都挂在 checkpointer 的这个线程上
     let threadId: string = crypto.randomUUID();
     let sessions: SessionMeta[] = loadSessions();
@@ -826,11 +849,15 @@ export function startWebUI(): void {
       return { ok: stty !== null };
     };
 
-    // 权限变化后重建 agent：interruptOn 与系统提示词里的权限说明都是构建时固化的
+    // 权限 / 搜索设置变化后重建 agent：interruptOn、系统提示词与工具集都是构建时固化的
     const syncAgent = () => {
-      if (config && agentPermission !== permission) {
-        agent = createMinoAgent(config, activeWorkspace().path, permission);
+      if (
+        config &&
+        (agentPermission !== permission || !sameSearch(agentSearch, settings.search))
+      ) {
+        agent = createMinoAgent(config, activeWorkspace().path, permission, settings.search);
         agentPermission = permission;
+        agentSearch = settings.search;
       }
     };
 
@@ -868,8 +895,9 @@ export function startWebUI(): void {
     // 当前配置变化后重建 agent 并开启新会话（旧会话仍保留在历史列表）
     const activateProfile = () => {
       permission = "workspace"; // 新会话回到默认权限
-      agent = config ? createMinoAgent(config, activeWorkspace().path, permission) : null;
+      agent = config ? createMinoAgent(config, activeWorkspace().path, permission, settings.search) : null;
       agentPermission = permission;
+      agentSearch = settings.search;
       threadId = crypto.randomUUID();
       sessionSaved = false;
       if (config) push({ type: "config", provider: config.provider, model: config.model });
@@ -1019,9 +1047,15 @@ export function startWebUI(): void {
         },
         setSettings(input: unknown) {
           const next = normalizeSettingsInput(input, settings);
+          const searchChanged = !sameSearch(settings.search, next.search);
           saveSettings(next);
           settings = next;
           applyProxy(settings.proxy);
+          // 搜索引擎开关固化在工具集里，变化后需重建 agent；对话进行中挂起到本轮结束
+          if (searchChanged) {
+            if (busy) pendingSearchSync = true;
+            else syncAgent();
+          }
           return settings;
         },
         // 用系统默认浏览器打开外部链接（设置-关于的跳转）
@@ -1068,8 +1102,9 @@ export function startWebUI(): void {
             workspaces.activeId = id;
             saveWorkspaces(workspaces);
             if (config) {
-              agent = createMinoAgent(config, target.path, permission);
+              agent = createMinoAgent(config, target.path, permission, settings.search);
               agentPermission = permission;
+              agentSearch = settings.search;
             }
           }
           return { activeId: workspaces.activeId, items: workspaces.items };
@@ -1104,8 +1139,9 @@ export function startWebUI(): void {
           workspaces.activeId = item.id;
           saveWorkspaces(workspaces);
           if (config) {
-            agent = createMinoAgent(config, dir, permission);
+            agent = createMinoAgent(config, dir, permission, settings.search);
             agentPermission = permission;
+            agentSearch = settings.search;
           }
           return { activeId: workspaces.activeId, items: workspaces.items };
         },
@@ -1120,8 +1156,9 @@ export function startWebUI(): void {
           if (workspaces.activeId === id) {
             workspaces.activeId = workspaces.items[0].id;
             if (config) {
-              agent = createMinoAgent(config, activeWorkspace().path, permission);
+              agent = createMinoAgent(config, activeWorkspace().path, permission, settings.search);
               agentPermission = permission;
+              agentSearch = settings.search;
             }
           }
           saveWorkspaces(workspaces);
@@ -1226,6 +1263,11 @@ export function startWebUI(): void {
           } finally {
             busy = false;
             confirmResolver = null;
+            // 对话期间改过搜索设置 → 现在重建 agent 使其生效
+            if (pendingSearchSync) {
+              pendingSearchSync = false;
+              syncAgent();
+            }
           }
           // 返回当前会话 id，供前端把新会话标为「当前」并刷新侧栏
           return { sessionId: threadId };

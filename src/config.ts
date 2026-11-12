@@ -216,6 +216,55 @@ export function saveModelProfiles(state: ModelProfilesState): void {
 
 export type Theme = "light" | "dark";
 
+// 搜索设置：engines 为启用的引擎，数组顺序即调用优先级（靠前优先）
+export const SEARCH_ENGINES = ["bing", "google", "bocha"] as const;
+export type SearchEngine = (typeof SEARCH_ENGINES)[number];
+
+// 搜索模式：
+// - serial 接力：按优先级依次尝试，命中即止（少请求、低延迟，付费引擎只在前面都失败时才调用）
+// - parallel 聚合：并行搜索全部启用引擎，结果合并去重后排序返回
+export const SEARCH_MODES = ["serial", "parallel"] as const;
+export type SearchMode = (typeof SEARCH_MODES)[number];
+
+export type SearchSettings = {
+  /** bing 国内可直连；google 需代理；bocha 国内可直连但需 API Key */
+  engines: SearchEngine[];
+  mode: SearchMode;
+  bochaApiKey: string;
+};
+
+export const DEFAULT_SEARCH: SearchSettings = {
+  engines: ["bing"],
+  mode: "serial",
+  bochaApiKey: "",
+};
+
+export function parseSearch(value: unknown): SearchSettings {
+  if (typeof value !== "object" || value === null) return { ...DEFAULT_SEARCH };
+  const s = value as Record<string, unknown>;
+  const apiKey =
+    typeof s.bochaApiKey === "string" ? s.bochaApiKey.trim() : "";
+  const mode = (SEARCH_MODES as readonly string[]).includes(s.mode as string)
+    ? (s.mode as SearchMode)
+    : "serial";
+  if (Array.isArray(s.engines)) {
+    // 过滤未知引擎（如已下线的 web/DuckDuckGo）并去重，保持用户给定的优先级顺序
+    const engines = [
+      ...new Set(
+        s.engines.filter((e): e is SearchEngine =>
+          (SEARCH_ENGINES as readonly string[]).includes(e as string)
+        )
+      ),
+    ];
+    return { engines, mode, bochaApiKey: apiKey };
+  }
+  // 旧格式迁移（{google, wiki, bocha} 布尔开关）：bing 默认启用，其余按旧开关追加
+  const engines: SearchEngine[] = ["bing"];
+  if (s.google === true) engines.push("google");
+  if (s.bocha === true) engines.push("bocha");
+  return { engines, mode, bochaApiKey: apiKey };
+}
+
 // 文件操作权限级别（读取一律免确认，仅写入受管控；按会话独立设置）：
 // - readonly  仅可查看：所有写入都需要用户确认
 // - workspace 工作区内修改（新会话默认）：工作区内自由读写，工作区外写入需确认
@@ -243,9 +292,15 @@ export type AppSettings = {
   panelWidth?: number;
   /** 正文字号（像素），12–20，缺省 15 */
   fontSize?: number;
+  /** 搜索引擎开关（google / bocha），默认关闭；默认通用搜索无需开关 */
+  search: SearchSettings;
 };
 
-const DEFAULT_SETTINGS: AppSettings = { proxy: null, theme: "light" };
+const DEFAULT_SETTINGS: AppSettings = {
+  proxy: null,
+  theme: "light",
+  search: { ...DEFAULT_SEARCH },
+};
 
 function parseProxy(value: unknown): ProxyConfig | null {
   if (typeof value !== "object" || value === null) return null;
@@ -278,6 +333,7 @@ export function loadSettings(): AppSettings {
         theme: m.theme === "dark" ? "dark" : "light",
         panelWidth: pw >= 160 && pw <= 2400 ? pw : undefined,
         fontSize: fs_ >= 12 && fs_ <= 20 ? fs_ : undefined,
+        search: parseSearch(m.search),
       };
     }
   } catch {
