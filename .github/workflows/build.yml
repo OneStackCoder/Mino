@@ -68,11 +68,12 @@ jobs:
           NAME="Mino-$VER-$GOOS-$GOARCH"
 
           # 业务代码与绝大部分依赖已由 esbuild 打进 app.mjs，这里只带运行时仍需落盘的部分：
-          # 原生模块（better-sqlite3 及其 bindings、webview 平台包）与前端经 mino:// 读取的静态资源
+          # 原生模块（better-sqlite3 及其 bindings、webview 平台包）、grep_search 用的 ripgrep 二进制，
+          # 以及前端经 mino:// 读取的静态资源（globby 是纯 JS，已打进 app.mjs）
           stage_runtime_deps() {
             local dest="$1"
             mkdir -p "$dest/node_modules"
-            for pkg in better-sqlite3 bindings file-uri-to-path marked dompurify marked-katex-extension @webviewjs/webview; do
+            for pkg in better-sqlite3 bindings file-uri-to-path marked dompurify marked-katex-extension @webviewjs/webview @vscode/ripgrep; do
               mkdir -p "$dest/node_modules/$(dirname "$pkg")"
               cp -R "node_modules/$pkg" "$dest/node_modules/$pkg"
             done
@@ -82,8 +83,9 @@ jobs:
             cp node_modules/katex/dist/fonts/*.woff2 "$dest/node_modules/katex/dist/fonts/"
             cp node_modules/@xterm/xterm/lib/xterm.js "$dest/node_modules/@xterm/xterm/lib/"
             cp node_modules/@xterm/xterm/css/xterm.css "$dest/node_modules/@xterm/xterm/css/"
-            # 可选依赖按平台自动安装，每个 runner 上只有一个 webview-* 平台包
+            # 可选依赖按平台自动安装，每个 runner 上只有对应平台的 webview-* / ripgrep-* 包
             cp -R node_modules/@webviewjs/webview-* "$dest/node_modules/@webviewjs/"
+            cp -R node_modules/@vscode/ripgrep-* "$dest/node_modules/@vscode/"
           }
 
           case "$GOOS" in

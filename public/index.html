@@ -43,6 +43,7 @@
     --toast-fg: #fff;
     --dir-color: #d9a94e;
     --font-size: 16px;
+    --session-title-size: 13px;
   }
   .dark {
     color-scheme: dark;
@@ -121,12 +122,12 @@
   .session:hover { background: var(--hover); }
   .session.active { background: var(--active); }
   .session-title {
-    font-size: 13px; line-height: 1.4;
+    font-size: var(--session-title-size); line-height: 1.4;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .session-time { font-size: 11px; color: var(--text-3); margin-top: 2px; }
   .session-title-input {
-    width: 100%; font-size: 13px; line-height: 1.4; padding: 2px 5px;
+    width: 100%; font-size: var(--session-title-size); line-height: 1.4; padding: 2px 5px;
     border: 1px solid var(--accent); border-radius: 5px; outline: none;
     background: var(--panel); color: var(--text); font-family: inherit;
   }
@@ -643,7 +644,6 @@
     user-select: none; -webkit-user-select: none;
   }
   .engine-card:hover { border-color: var(--accent); background: var(--hover); }
-  .engine-card.active { border-color: var(--accent); background: var(--accent-soft); }
   .engine-card-icon { width: 36px; height: 36px; flex: none; display: block; border-radius: 9px; }
   .engine-card-icon svg { width: 100%; height: 100%; display: block; }
   .engine-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1016,6 +1016,12 @@
         <span id="fontSizeVal">16</span>
         <span class="fs-sample">Aa</span>
       </div>
+      <div class="font-size-row">
+        <span class="fs-label">会话标题字号</span>
+        <input id="sessionTitleSizeRange" type="range" min="11" max="20" step="1" value="13" />
+        <span id="sessionTitleSizeVal">13</span>
+        <span class="fs-sample">Aa</span>
+      </div>
     </div>
     <div class="tab-panel" data-panel="about" hidden>
       <div class="about-head">
@@ -1185,6 +1191,8 @@
   const themeOptions = Array.from(document.querySelectorAll('.theme-option'));
   const fontSizeRange = document.getElementById('fontSizeRange');
   const fontSizeVal = document.getElementById('fontSizeVal');
+  const sessionTitleSizeRange = document.getElementById('sessionTitleSizeRange');
+  const sessionTitleSizeVal = document.getElementById('sessionTitleSizeVal');
   const tabButtons = Array.from(document.querySelectorAll('.snav'));
   const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
   const modelOverlay = document.getElementById('modelOverlay');
@@ -1205,6 +1213,7 @@
   let activeSettings = { proxy: null, theme: 'light', fontSize: 16 };
   let selectedTheme = 'light';
   let selectedFontSize = 16;
+  let selectedSessionTitleSize = 13;
   let hasKey = false;      // 编辑目标是否已保存 API Key
   let keyEdited = false;   // 本次打开表单后是否手动改过 Key
   const KEY_MASK = '**********';
@@ -1345,6 +1354,13 @@
     document.documentElement.style.setProperty('--font-size', px + 'px');
     fontSizeVal.textContent = String(px);
     fontSizeRange.value = String(px);
+  }
+
+  function applySessionTitleFontSize(size) {
+    const px = Math.min(20, Math.max(11, Math.round(Number(size) || 13)));
+    document.documentElement.style.setProperty('--session-title-size', px + 'px');
+    sessionTitleSizeVal.textContent = String(px);
+    sessionTitleSizeRange.value = String(px);
   }
 
   function fillProxyFields(p) {
@@ -1502,6 +1518,7 @@
     activeSettings = s;
     selectedTheme = s.theme;
     selectedFontSize = s.fontSize ?? 16;
+    selectedSessionTitleSize = s.sessionTitleFontSize ?? 13;
     fillProxyFields(s.proxy);
     fillSearchFields(s.search);
     for (const opt of themeOptions) {
@@ -1511,6 +1528,7 @@
     }
     applyTheme(s.theme);
     applyFontSize(selectedFontSize);
+    applySessionTitleFontSize(selectedSessionTitleSize);
   }
 
   function switchTab(name) {
@@ -1532,6 +1550,10 @@
   fontSizeRange.addEventListener('input', () => {
     selectedFontSize = parseInt(fontSizeRange.value, 10);
     applyFontSize(selectedFontSize);
+  });
+  sessionTitleSizeRange.addEventListener('input', () => {
+    selectedSessionTitleSize = parseInt(sessionTitleSizeRange.value, 10);
+    applySessionTitleFontSize(selectedSessionTitleSize);
   });
   // 快捷键 Ctrl/⌘ + 加号/减号调正文字号，与设置里的「正文字号」共用同一份配置
   document.addEventListener('keydown', (e) => {
@@ -1719,6 +1741,7 @@
         },
         theme: selectedTheme,
         fontSize: selectedFontSize,
+        sessionTitleFontSize: selectedSessionTitleSize,
         search: {
           // 缺 Key 的开启态已在配置弹框中回弹，这里直接存开关态
           bocha: bochaSearchToggle.checked,

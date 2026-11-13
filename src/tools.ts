@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 import * as cheerio from "cheerio";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { tool } from "langchain";
 import { z } from "zod";
+import { globby } from "globby";
+import { rgPath } from "@vscode/ripgrep";
 import type {
   AgentConfig,
   PermissionLevel,
@@ -88,6 +91,70 @@ export function needsConfirm(
   if (permission === "full") return false;
   if (inside) return permission === "readonly";
   return true;
+}
+
+// ========== 文件搜索：glob 按路径找文件（globby）、grep 按内容找文本（ripgrep），均为读取，免确认 ==========
+
+// 搜索时跳过的目录：依赖、构建产物与缓存，体量大且几乎不含用户要找的内容
+const NOISE_DIRS = [
+  "node_modules", ".git", ".svn", ".hg",
+  "dist", "build", "out", ".next", ".nuxt", "coverage",
+  "__pycache__", ".venv", "venv", ".cache", ".idea", ".vscode",
+];
+const NOISE_IGNORE = NOISE_DIRS.map((dir) => `**/${dir}/**`);
+
+// 跑一次 ripgrep（二进制随 @vscode/ripgrep 按平台安装），收满 maxMatches 行即提前 kill，
+// 避免超大目录 / 过宽模式拖垮搜索；30 秒超时兜底
+function runRipgrep(
+  args: string[],
+  cwd: string,
+  maxMatches: number
+): Promise<{ lines: string[]; stderr: string; code: number | null; truncated: boolean; timedOut: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn(rgPath, args, {
+      cwd,
+      windowsHide: true,
+      // stdin 必须 ignore：目录搜索不传路径参数，rg 检测到 stdin 是未关闭的管道时会改为等待读取 stdin
+      stdio: ["ignore", "pipe", "pipe"],
+      signal: AbortSignal.timeout(30_000),
+    });
+    const lines: string[] = [];
+    let stderr = "";
+    let partial = "";
+    let truncated = false;
+    let timedOut = false;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ lines, stderr, code: child.exitCode, truncated, timedOut });
+    };
+    child.stdout.on("data", (chunk: Buffer) => {
+      partial += chunk.toString();
+      const parts = partial.split("\n");
+      partial = parts.pop() ?? "";
+      for (const raw of parts) {
+        const line = raw.replace(/\r$/, "");
+        if (!line) continue;
+        if (lines.length >= maxMatches) {
+          truncated = true;
+          child.kill();
+          return;
+        }
+        lines.push(line.length > 320 ? line.slice(0, 320) + "…" : line);
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (err) => {
+      // AbortSignal 超时被杀记为 timedOut；其余（如找不到 rg 二进制）并入 stderr 统一报错
+      if ((err as NodeJS.ErrnoException).name === "AbortError") timedOut = true;
+      else stderr += (err as Error).message;
+      finish();
+    });
+    child.on("close", finish);
+  });
 }
 
 // 工厂：文件工具按工作区目录构建（切换工作区时由 web.ts 重建 agent 重新装配）
@@ -173,7 +240,114 @@ function createFileTools(workspace: string) {
     }
   );
 
-  return [readFileTool, writeFileTool, listDirectoryTool];
+  // 工具：按文件名 / 路径模式（glob）搜索文件路径，不读文件内容
+  const globSearchTool = tool(
+    async ({ pattern, path: dir = "." }) => {
+      if (!pattern) return "请提供要匹配的 glob 模式。";
+      try {
+        const root = resolveWorkspacePath(workspace, dir).path;
+        if (!fs.existsSync(root)) return `目录不存在：${root}`;
+        if (!fs.statSync(root).isDirectory()) return `目标不是目录：${root}`;
+        const hits = (
+          await globby(pattern, {
+            cwd: root,
+            ignore: NOISE_IGNORE,
+            dot: true, // .env 等隐藏文件仍可被搜到，噪声目录靠 ignore 排除
+            expandDirectories: false, // 保留 glob 原语义：*.ts 只匹配根层，不自动展开目录
+            followSymbolicLinks: false,
+            suppressErrors: true, // 读不了的目录跳过
+          })
+        ).sort();
+        if (!hits.length) return `没有匹配「${pattern}」的文件。`;
+        return hits.length > 200
+          ? hits.slice(0, 200).join("\n") + `\n（共 ${hits.length} 个匹配，仅显示前 200 个）`
+          : hits.join("\n");
+      } catch (err) {
+        return `搜索失败：${(err as Error).message}`;
+      }
+    },
+    {
+      name: "glob_search",
+      description:
+        "按文件名 / 路径模式搜索文件路径（不读内容）。pattern 为 glob 模式：* 单层任意字符、** 跨任意目录、? 单字符、[abc] 字符集、{a,b} 多选，按相对搜索目录的完整路径匹配（'*.ts' 只匹配根层，'**/*.ts' 含子目录）。默认搜索当前工作区，path 可指定其他目录。跳过 node_modules、.git 等依赖与缓存目录。",
+      schema: z.object({
+        pattern: z.string().describe("glob 模式，如 '**/*.ts'、'src/**/*.{js,ts}'"),
+        path: z.string().optional().describe("搜索起始目录，默认当前工作区根目录"),
+      }),
+    }
+  );
+
+  // 工具：按文本 / 正则表达式搜索文件内容（ripgrep）
+  const grepSearchTool = tool(
+    async ({ pattern, path: target = ".", isRegex = false, include, ignoreCase = false }) => {
+      if (!pattern) return "请提供要搜索的文本或正则表达式。";
+      try {
+        const root = resolveWorkspacePath(workspace, target).path;
+        if (!fs.existsSync(root)) return `路径不存在：${root}`;
+        const stat = fs.statSync(root);
+        const isDir = stat.isDirectory();
+        if (!isDir && !stat.isFile()) return `目标不是文件或目录：${root}`;
+        const args = [
+          "--with-filename",
+          "--line-number",
+          "--no-heading",
+          "--max-filesize=2M", // 跳过大文件，避免拖慢搜索
+          ...(isRegex ? [] : ["--fixed-strings"]),
+          ...(ignoreCase ? ["--ignore-case"] : []),
+        ];
+        if (isDir) {
+          // --hidden 让 .env 等隐藏文件仍可被搜到，噪声目录靠 glob 排除；
+          // rg 的 glob 规则后出现的优先，因此用户 include 在前、噪声排除在后
+          args.push("--hidden");
+          if (include) args.push("--glob", include);
+          args.push("--glob", `!**/{${NOISE_DIRS.join(",")}}/**`);
+          args.push("--", pattern); // 不传路径 = 递归搜索 cwd，输出相对路径
+        } else {
+          args.push("--", pattern, root); // 单文件显式指定，不受忽略规则与 glob 影响
+        }
+        const { lines, stderr, code, truncated, timedOut } = await runRipgrep(
+          args,
+          isDir ? root : workspace,
+          50
+        );
+        // rg 退出码：0 有匹配，1 无匹配，2 出错
+        if (code === 2 && !lines.length) {
+          // include / 大小上限 / 忽略规则把候选文件全部筛掉时 rg 也退出 2，按无匹配处理更贴近本意
+          if (stderr.includes("No files were searched"))
+            return `没有找到匹配「${pattern}」的内容（候选文件都被 include、大小上限或忽略规则过滤掉了）。`;
+          const msg = stderr.split("\n")[0]?.trim();
+          return `搜索失败：${msg || "ripgrep 执行出错"}`;
+        }
+        if (!lines.length) return `没有找到匹配「${pattern}」的内容。`;
+        const notes: string[] = [];
+        if (truncated)
+          notes.push("匹配较多，仅显示前 50 处，可指定更小的 path 或更精确的模式");
+        if (timedOut) notes.push("搜索超过 30 秒被中止，以上为已找到的结果");
+        return (
+          lines.join("\n") + (notes.length ? `\n（${notes.join("；")}）` : "")
+        );
+      } catch (err) {
+        return `搜索失败：${(err as Error).message}`;
+      }
+    },
+    {
+      name: "grep_search",
+      description:
+        "按文本或正则表达式搜索文件内容，返回「路径:行号:该行内容」。默认从当前工作区递归搜索，path 可指定文件或目录（含工作区外）；include 可只搜文件名匹配 glob 的文件。跳过 node_modules、.git 等目录与二进制文件。",
+      schema: z.object({
+        pattern: z.string().describe("要搜索的文本或正则表达式"),
+        path: z.string().optional().describe("搜索起点，文件或目录，默认当前工作区根目录"),
+        isRegex: z.boolean().optional().describe("pattern 是否按正则表达式处理，默认按字面文本"),
+        include: z
+          .string()
+          .optional()
+          .describe("可选，只搜索文件名匹配此 glob 的文件，如 '*.ts'（不含 / 时匹配任意层级的文件名）"),
+        ignoreCase: z.boolean().optional().describe("可选，忽略大小写，默认区分大小写"),
+      }),
+    }
+  );
+
+  return [readFileTool, writeFileTool, listDirectoryTool, globSearchTool, grepSearchTool];
 }
 
 // 装配完整工具集：文件操作按权限模式管控；搜索引擎按设置开关装配进 web_search。

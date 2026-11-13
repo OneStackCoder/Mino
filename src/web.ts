@@ -222,12 +222,21 @@ function normalizeSettingsInput(input: unknown, current: AppSettings): AppSettin
       ? Math.floor(m.fontSize)
       : NaN;
   const fontSize = fsInput >= 12 && fsInput <= 20 ? fsInput : current.fontSize;
+  // 会话标题字号：11–20 之间的整数才接受，否则沿用现有值（首次为 undefined，前端用默认 13）
+  const stInput =
+    typeof m.sessionTitleFontSize === "number" &&
+    Number.isFinite(m.sessionTitleFontSize)
+      ? Math.floor(m.sessionTitleFontSize)
+      : NaN;
+  const sessionTitleFontSize =
+    stInput >= 11 && stInput <= 20 ? stInput : current.sessionTitleFontSize;
   // 面板宽度由专用 RPC setPanelWidth 维护；普通 setSettings（改主题/代理/字号）不得丢失它
   return {
     proxy,
     theme,
     panelWidth: current.panelWidth,
     fontSize,
+    sessionTitleFontSize,
     search: m.search === undefined ? current.search : parseSearch(m.search),
   };
 }

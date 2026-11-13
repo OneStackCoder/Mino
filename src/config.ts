@@ -296,6 +296,8 @@ export type AppSettings = {
   panelWidth?: number;
   /** 正文字号（像素），12–20，缺省 15 */
   fontSize?: number;
+  /** 会话标题字号（像素），11–20，缺省 13 */
+  sessionTitleFontSize?: number;
   /** 搜索设置：付费引擎开关（博查 / SerpAPI）；未启用时用当前模型商的搜索接口 */
   search: SearchSettings;
 };
@@ -338,11 +340,17 @@ export function loadSettings(): AppSettings {
         typeof m.fontSize === "number" && Number.isFinite(m.fontSize)
           ? Math.floor(m.fontSize)
           : NaN;
+      const st_ =
+        typeof m.sessionTitleFontSize === "number" &&
+        Number.isFinite(m.sessionTitleFontSize)
+          ? Math.floor(m.sessionTitleFontSize)
+          : NaN;
       return {
         proxy: parseProxy(m.proxy),
         theme: m.theme === "dark" ? "dark" : "light",
         panelWidth: pw >= 160 && pw <= 2400 ? pw : undefined,
         fontSize: fs_ >= 12 && fs_ <= 20 ? fs_ : undefined,
+        sessionTitleFontSize: st_ >= 11 && st_ <= 20 ? st_ : undefined,
         search: parseSearch(m.search),
       };
     }
