@@ -189,7 +189,9 @@ function sameSearch(a: SearchSettings, b: SearchSettings): boolean {
     a.bocha === b.bocha &&
     a.bochaApiKey === b.bochaApiKey &&
     a.serpapi === b.serpapi &&
-    a.serpapiApiKey === b.serpapiApiKey
+    a.serpapiApiKey === b.serpapiApiKey &&
+    a.engineOrder.length === b.engineOrder.length &&
+    a.engineOrder.every((e, i) => e === b.engineOrder[i])
   );
 }
 

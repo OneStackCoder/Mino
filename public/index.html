@@ -662,7 +662,32 @@
     border-color: var(--accent); background: var(--accent); color: #fff;
   }
   .engine-card input { display: none; }
-  .search-key { margin-top: 10px; }
+  /* 卡片右侧的配置按钮：点击弹内部配置框，不触发卡片选中 */
+  .engine-card-config {
+    flex: none; width: 26px; height: 26px; border-radius: 7px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--text-3); cursor: pointer;
+  }
+  .engine-card-config svg { width: 15px; height: 15px; display: block; }
+  .engine-card-config:hover { color: var(--text); background: var(--border); }
+  /* 引擎配置框：盖在设置弹窗之上的内部小弹窗 */
+  .engine-config-dialog { width: 400px; }
+  /* 卡片可拖拽排序：顺序即级联优先级，间距跟着相邻选择器走（换位后仍正确） */
+  .tab-panel[data-panel="search"] .engine-card + .engine-card { margin-top: 10px; }
+  .engine-card.dragging { opacity: .45; }
+  .engine-card.drag-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  /* 把手：Pointer Events 手写拖拽的起点，touch-action 防滚动抢占指针 */
+  .engine-card-grip { flex: none; color: var(--text-3); cursor: grab; display: inline-flex; touch-action: none; }
+  .engine-card-grip svg { width: 10px; height: 16px; display: block; }
+  .engine-card.dragging .engine-card-grip { cursor: grabbing; }
+  /* 图标左上角的顺位徽标：拖动 / 保存后实时更新 */
+  .engine-card-icon { position: relative; }
+  .engine-card-rank {
+    position: absolute; top: -5px; left: -5px; width: 15px; height: 15px;
+    border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 9px; font-weight: 700; font-style: normal;
+    display: flex; align-items: center; justify-content: center;
+  }
   .about-head { display: flex; align-items: center; gap: 14px; }
   .about-logo { width: 56px; height: 56px; flex: none; }
   .about-name { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
@@ -933,40 +958,42 @@
       <div class="hint">主机留空表示直连；代理对模型请求与信息检索（模型商搜索 / 博查 / SerpAPI / 网页抓取）统一生效</div>
     </div>
     <div class="tab-panel" data-panel="search" hidden>
-      <div class="search-section-desc">默认使用当前模型商的搜索接口（复用其 API Key，无需配置）；博查与 SerpAPI 二选一，勾选后优先使用，失败时自动回落模型商搜索</div>
+      <div class="search-section-desc">默认使用当前模型商的搜索接口（复用其 API Key，无需配置）；卡片可同时勾选、可拖动排序——第一个优先搜索，失败自动尝试下一个启用的引擎，再回落模型商搜索</div>
       <div class="engine-card" id="bochaCard">
-        <span class="engine-card-icon">
-          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#3D5AFE"/><path fill="#fff" d="M8.2 6.5h4.1c1.9 0 3 1 3 2.5 0 1-.5 1.7-1.4 2.1 1.2.3 2 1.2 2 2.6 0 1.9-1.4 3-3.6 3H8.2zm2 4h1.9c.8 0 1.3-.4 1.3-1s-.5-1-1.3-1h-1.9zm0 4.2h2.3c.9 0 1.5-.4 1.5-1.1 0-.8-.6-1.2-1.5-1.2h-2.3z"/></svg>
-        </span>
-        <span class="engine-card-body">
-          <span class="engine-card-title">博查搜索</span>
-          <span class="engine-card-note">付费网页搜索，需填写下方 API Key</span>
-        </span>
         <span class="engine-card-check">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6" /></svg>
           <input type="checkbox" id="bochaSearchToggle" />
         </span>
-      </div>
-      <div class="search-key">
-        <label for="bochaApiKey">博查 API Key</label>
-        <input id="bochaApiKey" type="password" placeholder="在 open.bochaai.com 申请" autocomplete="off" />
-      </div>
-      <div class="engine-card" id="serpapiCard" style="margin-top: 10px;">
         <span class="engine-card-icon">
-          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#1a9f5c"/><path fill="#fff" d="M15.2 13.2l1.8 1.8a5.4 5.4 0 1 0-4.3 2.1 5.3 5.3 0 0 0 2.9-.9l1.7 1.7.9-.9-1.8-1.8zm-2.5 3a4.1 4.1 0 1 1 4.1-4.1 4.1 4.1 0 0 1-4.1 4.1z"/></svg>
+          <i class="engine-card-rank">1</i>
+          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#3D5AFE"/><path fill="#fff" d="M8.2 6.5h4.1c1.9 0 3 1 3 2.5 0 1-.5 1.7-1.4 2.1 1.2.3 2 1.2 2 2.6 0 1.9-1.4 3-3.6 3H8.2zm2 4h1.9c.8 0 1.3-.4 1.3-1s-.5-1-1.3-1h-1.9zm0 4.2h2.3c.9 0 1.5-.4 1.5-1.1 0-.8-.6-1.2-1.5-1.2h-2.3z"/></svg>
         </span>
         <span class="engine-card-body">
-          <span class="engine-card-title">SerpAPI</span>
-          <span class="engine-card-note">付费 Google 搜索结果，需填写下方 API Key，国内通常需代理</span>
+          <span class="engine-card-title">博查搜索</span>
+          <span class="engine-card-note">付费网页搜索，国内可直连，点右侧按钮配置 API Key</span>
         </span>
+        <button class="engine-card-config" id="bochaConfigBtn" type="button" title="配置博查搜索" aria-label="配置博查搜索">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <span class="engine-card-grip"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/></svg></span>
+      </div>
+      <div class="engine-card" id="serpapiCard">
         <span class="engine-card-check">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6" /></svg>
           <input type="checkbox" id="serpapiSearchToggle" />
         </span>
-      </div>
-      <div class="search-key">
-        <label for="serpapiApiKey">SerpAPI API Key</label>
-        <input id="serpapiApiKey" type="password" placeholder="在 serpapi.com 申请" autocomplete="off" />
+        <span class="engine-card-icon">
+          <i class="engine-card-rank">2</i>
+          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#1a9f5c"/><path fill="#fff" d="M15.2 13.2l1.8 1.8a5.4 5.4 0 1 0-4.3 2.1 5.3 5.3 0 0 0 2.9-.9l1.7 1.7.9-.9-1.8-1.8zm-2.5 3a4.1 4.1 0 1 1 4.1-4.1 4.1 4.1 0 0 1-4.1 4.1z"/></svg>
+        </span>
+        <span class="engine-card-body">
+          <span class="engine-card-title">SerpAPI</span>
+          <span class="engine-card-note">付费搜索，引擎在配置里选择，国内通常需代理</span>
+        </span>
+        <button class="engine-card-config" id="serpapiConfigBtn" type="button" title="配置 SerpAPI" aria-label="配置 SerpAPI">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <span class="engine-card-grip"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/></svg></span>
       </div>
     </div>
     <div class="tab-panel" data-panel="appearance" hidden>
@@ -1072,6 +1099,33 @@
     <div class="actions">
       <button id="modelConfirmCancel">取消</button>
       <button id="modelConfirmOk" class="danger">删除</button>
+    </div>
+  </div>
+</div>
+<!-- 博查配置：设置弹窗内部的小弹窗 -->
+<div class="overlay" id="bochaConfigOverlay" hidden>
+  <div class="dialog engine-config-dialog">
+    <h2>博查搜索配置</h2>
+    <div class="sub">付费网页搜索，国内可直连；失败时自动回落模型商搜索</div>
+    <label for="bochaApiKey">API Key</label>
+    <input id="bochaApiKey" type="password" placeholder="在 open.bochaai.com 申请" autocomplete="off" />
+    <div class="hint">仅保存在本机 ~/.config/Mino/，不会上传</div>
+    <div class="actions">
+      <button id="bochaConfigDone" class="primary">完成</button>
+    </div>
+  </div>
+</div>
+<!-- SerpAPI 配置：设置弹窗内部的小弹窗（Key + 引擎三选一） -->
+<div class="overlay" id="serpapiConfigOverlay" hidden>
+  <div class="dialog engine-config-dialog">
+    <h2>SerpAPI 配置</h2>
+    <div class="sub">付费搜索接口，国内通常需代理；失败时自动回落模型商搜索</div>
+    <label for="serpapiApiKey">API Key</label>
+    <input id="serpapiApiKey" type="password" placeholder="在 serpapi.com 申请" autocomplete="off" />
+    <div class="hint">会依次使用 Google 和 Brave 两个引擎：优先 Google，搜不到自动换 Brave</div>
+    <div class="hint">仅保存在本机 ~/.config/Mino/，不会上传</div>
+    <div class="actions">
+      <button id="serpapiConfigDone" class="primary">完成</button>
     </div>
   </div>
 </div>
@@ -1301,10 +1355,105 @@
     proxyPassword.value = p ? p.password : '';
   }
 
-  // 引擎卡片：单选互斥（博查 / SerpAPI 只能启用其一，都不选则用模型商默认搜索）；
-  // 缺 Key 时禁止开启（付费接口），清空 Key 自动回弹为关闭
+  // 引擎卡片：可独立勾选（多选），卡片可拖动排序——顺位即级联优先级；
+  // 缺 Key 时点卡片弹配置框引导填写，清空 Key 自动回弹为关闭
   const bochaCard = document.getElementById('bochaCard');
   const serpapiCard = document.getElementById('serpapiCard');
+  const searchPanel = document.querySelector('.tab-panel[data-panel="search"]');
+  const bochaConfigOverlay = document.getElementById('bochaConfigOverlay');
+  const serpapiConfigOverlay = document.getElementById('serpapiConfigOverlay');
+  const openEngineModal = (overlay, keyInput) => {
+    overlay.hidden = false;
+    keyInput.focus();
+  };
+  // 配置弹框：点遮罩空白处或「完成」按钮关闭
+  const bindEngineModal = (overlay, doneBtn) => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.hidden = true;
+    });
+    doneBtn.addEventListener('click', () => { overlay.hidden = true; });
+  };
+  bindEngineModal(bochaConfigOverlay, document.getElementById('bochaConfigDone'));
+  bindEngineModal(serpapiConfigOverlay, document.getElementById('serpapiConfigDone'));
+  // 齿轮按钮只开配置弹框，stopPropagation 避免触发卡片选中
+  document.getElementById('bochaConfigBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    openEngineModal(bochaConfigOverlay, bochaApiKey);
+  });
+  document.getElementById('serpapiConfigBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    openEngineModal(serpapiConfigOverlay, serpapiApiKey);
+  });
+  // 顺位徽标：按卡片当前 DOM 顺序更新（1 优先，2 次之）
+  const updateEngineRanks = () => {
+    searchPanel.querySelectorAll('.engine-card').forEach((c, i) => {
+      c.querySelector('.engine-card-rank').textContent = String(i + 1);
+    });
+  };
+  // 拖拽排序：按住把手拖动，按目标卡上/下半区决定插前还是插后。
+  // 不用原生 HTML5 DnD——WebKitGTK 嵌入式 webview 里 dragstart 可能根本不触发
+  // （表现为完全拖不动），Pointer Events 手写实现跨平台最稳；
+  // 松手后浏览器还会补发一次 click，用标志吞掉
+  let draggingCard = null;
+  let suppressCardClick = false;
+  // 纵坐标定位目标卡片：指针在卡内优先，落在卡片间隙时吸附最近一张
+  const cardAt = (y) => {
+    const cards = Array.from(searchPanel.querySelectorAll('.engine-card')).filter((c) => c !== draggingCard);
+    let best = null;
+    let bestDist = Infinity;
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) return c;
+      const d = y < r.top ? r.top - y : y - r.bottom;
+      if (d < bestDist) { best = c; bestDist = d; }
+    }
+    return best;
+  };
+  const bindCardDrag = (card) => {
+    const grip = card.querySelector('.engine-card-grip');
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || draggingCard) return;
+      // 若上次拖拽的 click 补发因故没来，标志会残留导致下一次点击被吞，先清一次
+      suppressCardClick = false;
+      const startY = e.clientY;
+      let moved = false;
+      const onMove = (ev) => {
+        // 移动超过 4px 才算拖拽，点击把手时的轻微手抖不触发
+        if (!moved) {
+          if (Math.abs(ev.clientY - startY) < 4) return;
+          moved = true;
+          draggingCard = card;
+          card.classList.add('dragging');
+        }
+        const target = cardAt(ev.clientY);
+        searchPanel.querySelectorAll('.engine-card').forEach((c) => c.classList.toggle('drag-over', c === target));
+      };
+      const onUp = (ev) => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (!moved) return;
+        card.classList.remove('dragging');
+        searchPanel.querySelectorAll('.engine-card').forEach((c) => c.classList.remove('drag-over'));
+        const target = cardAt(ev.clientY);
+        if (target) {
+          const r = target.getBoundingClientRect();
+          searchPanel.insertBefore(card, ev.clientY < r.top + r.height / 2 ? target : target.nextSibling);
+          updateEngineRanks();
+        }
+        suppressCardClick = true;
+        draggingCard = null;
+      };
+      // 捕获指针：按住后移出把手甚至窗口边缘也能持续收到移动事件
+      grip.setPointerCapture(e.pointerId);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+  };
+  bindCardDrag(bochaCard);
+  bindCardDrag(serpapiCard);
+  updateEngineRanks();
   const syncBochaToggle = (on) => {
     bochaSearchToggle.checked = on;
     bochaCard.classList.toggle('active', on);
@@ -1313,21 +1462,16 @@
     serpapiSearchToggle.checked = on;
     serpapiCard.classList.toggle('active', on);
   };
-  const bindEngineCard = (card, toggle, keyInput, name, sync, syncOther) => {
+  const bindEngineCard = (card, toggle, keyInput, overlay, name, sync) => {
     card.addEventListener('click', () => {
+      if (suppressCardClick) { suppressCardClick = false; return; }
       if (!toggle.checked && !keyInput.value.trim()) {
-        settingsErr.textContent = `启用${name}需要先填写下方 API Key`;
-        keyInput.focus();
+        openEngineModal(overlay, keyInput);
         return;
       }
       settingsErr.textContent = '';
-      // 已选中时再点一次取消（回到默认的模型商搜索），未选中则抢占互斥选择权
-      if (toggle.checked) {
-        sync(false);
-      } else {
-        sync(true);
-        syncOther(false);
-      }
+      // 再点一次取消（回到默认的模型商搜索）；多个引擎可同时启用，顺序由卡片位置决定
+      sync(!toggle.checked);
     });
     keyInput.addEventListener('input', () => {
       if (!keyInput.value.trim() && toggle.checked) {
@@ -1336,17 +1480,22 @@
       }
     });
   };
-  bindEngineCard(bochaCard, bochaSearchToggle, bochaApiKey, '博查', syncBochaToggle, syncSerpapiToggle);
-  bindEngineCard(serpapiCard, serpapiSearchToggle, serpapiApiKey, 'SerpAPI', syncSerpapiToggle, syncBochaToggle);
+  bindEngineCard(bochaCard, bochaSearchToggle, bochaApiKey, bochaConfigOverlay, '博查', syncBochaToggle);
+  bindEngineCard(serpapiCard, serpapiSearchToggle, serpapiApiKey, serpapiConfigOverlay, 'SerpAPI', syncSerpapiToggle);
 
   function fillSearchFields(s) {
     if (!s) return;
     bochaApiKey.value = s.bochaApiKey || '';
     serpapiApiKey.value = s.serpapiApiKey || '';
-    // 双开仅在手改 settings.json 时出现，按后端尝试顺序以博查优先展示
-    const useBocha = !!s.bocha && !!s.bochaApiKey;
-    syncBochaToggle(useBocha);
-    syncSerpapiToggle(!useBocha && !!s.serpapi && !!s.serpapiApiKey);
+    // 按保存的顺序重排卡片（appendChild 移动既有节点），顺位徽标随之更新
+    const order = Array.isArray(s.engineOrder) ? s.engineOrder : [];
+    for (const id of order) {
+      if (id === 'bocha') searchPanel.appendChild(bochaCard);
+      else if (id === 'serpapi') searchPanel.appendChild(serpapiCard);
+    }
+    updateEngineRanks();
+    syncBochaToggle(!!s.bocha && !!s.bochaApiKey);
+    syncSerpapiToggle(!!s.serpapi && !!s.serpapiApiKey);
   }
 
   function applySettings(s) {
@@ -1556,6 +1705,9 @@
 
   async function saveSettings() {
     settingsErr.textContent = '';
+    // 顺位即卡片在面板里的 DOM 顺序，第一个优先搜索
+    const engineOrder = Array.from(searchPanel.querySelectorAll('.engine-card'))
+      .map((c) => (c.id === 'bochaCard' ? 'bocha' : 'serpapi'));
     try {
       const s = await window.MinoAgent.setSettings({
         proxy: {
@@ -1568,11 +1720,12 @@
         theme: selectedTheme,
         fontSize: selectedFontSize,
         search: {
-          // 缺 Key 的开启态已在输入框 input 事件中回弹，这里直接存开关态
+          // 缺 Key 的开启态已在配置弹框中回弹，这里直接存开关态
           bocha: bochaSearchToggle.checked,
           bochaApiKey: bochaApiKey.value.trim(),
           serpapi: serpapiSearchToggle.checked,
           serpapiApiKey: serpapiApiKey.value.trim(),
+          engineOrder,
         },
       });
       applySettings(s);
@@ -1688,10 +1841,14 @@
   document.getElementById('settings').onclick = () => { if (!busy) openSettings(); };
   document.getElementById('settingsCancel').onclick = () => {
     overlay.hidden = true;
+    bochaConfigOverlay.hidden = true;
+    serpapiConfigOverlay.hidden = true;
     applyTheme(activeSettings.theme); // 取消时回退到已保存主题
   };
   settingsClose.onclick = () => {
     overlay.hidden = true;
+    bochaConfigOverlay.hidden = true;
+    serpapiConfigOverlay.hidden = true;
     applyTheme(activeSettings.theme);
   };
   document.getElementById('settingsSave').onclick = saveSettings;
@@ -1986,6 +2143,11 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     // 内层弹窗优先关闭，背后的设置弹窗保持打开
+    if (!bochaConfigOverlay.hidden || !serpapiConfigOverlay.hidden) {
+      bochaConfigOverlay.hidden = true;
+      serpapiConfigOverlay.hidden = true;
+      return;
+    }
     if (!modelConfirmOverlay.hidden) {
       pendingModelDelete = null;
       modelConfirmOverlay.hidden = true;

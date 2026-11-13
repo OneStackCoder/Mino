@@ -223,10 +223,18 @@ export type SearchSettings = {
   bochaApiKey: string;
   serpapi: boolean;
   serpapiApiKey: string;
+  /** 付费引擎尝试顺序（第一个优先，失败尝试下一个），两项始终齐全 */
+  engineOrder: Array<"bocha" | "serpapi">;
 };
 
 export function parseSearch(value: unknown): SearchSettings {
-  const empty = { bocha: false, bochaApiKey: "", serpapi: false, serpapiApiKey: "" };
+  const empty = {
+    bocha: false,
+    bochaApiKey: "",
+    serpapi: false,
+    serpapiApiKey: "",
+    engineOrder: ["bocha", "serpapi"] as Array<"bocha" | "serpapi">,
+  };
   if (typeof value !== "object" || value === null) return empty;
   const s = value as Record<string, unknown>;
   const bochaApiKey =
@@ -243,12 +251,21 @@ export function parseSearch(value: unknown): SearchSettings {
     typeof s.serpapi === "boolean"
       ? s.serpapi
       : engines.includes("serpapi");
+  // 顺序按用户拖定的顺序保留合法引擎名，缺失的补到末尾，保证两张卡片都有确定顺位
+  const rawOrder = Array.isArray(s.engineOrder) ? s.engineOrder : [];
+  const engineOrder = rawOrder.filter(
+    (e): e is "bocha" | "serpapi" => e === "bocha" || e === "serpapi"
+  );
+  for (const e of ["bocha", "serpapi"] as const) {
+    if (!engineOrder.includes(e)) engineOrder.push(e);
+  }
   // 缺 Key 时启用必然失败，直接归一为关闭
   return {
     bocha: bocha && !!bochaApiKey,
     bochaApiKey,
     serpapi: serpapi && !!serpapiApiKey,
     serpapiApiKey,
+    engineOrder,
   };
 }
 
@@ -286,7 +303,13 @@ export type AppSettings = {
 const DEFAULT_SETTINGS: AppSettings = {
   proxy: null,
   theme: "light",
-  search: { bocha: false, bochaApiKey: "", serpapi: false, serpapiApiKey: "" },
+  search: {
+    bocha: false,
+    bochaApiKey: "",
+    serpapi: false,
+    serpapiApiKey: "",
+    engineOrder: ["bocha", "serpapi"],
+  },
 };
 
 function parseProxy(value: unknown): ProxyConfig | null {

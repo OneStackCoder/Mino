@@ -21,7 +21,7 @@ npm run build      # esbuild 打包成 build/app/app.mjs，并复制、压缩 pu
 
 - `src/agent.ts`：`createMinoAgent(config, workspaceDir, permission)` 构建 Agent、模型工厂、权限提示词、工具拦截。
 - `src/config.ts`：配置读写、`CONFIG_DIR`、`DEFAULT_WORKSPACE_DIR`、`PermissionLevel` 等唯一来源。
-- `src/tools.ts`：LangChain 工具（read/write/list、calculator、时间、web_search 统一搜索、网页抓取）。搜索默认用当前模型商的搜索能力（复用其 API Key：智谱、DeepSeek 有独立搜索端点，OpenAI 经 Responses API 内置 web_search 适配）；`settings.json` 的 search.bocha 启用付费 Bocha 优先使用，失败自动回落模型商搜索。
+- `src/tools.ts`：LangChain 工具（read/write/list、calculator、时间、web_search 统一搜索、网页抓取）。搜索默认用当前模型商的搜索能力（复用其 API Key：智谱、DeepSeek 有独立搜索端点，OpenAI 经 Responses API 内置 web_search 适配）；`settings.json` 的 search 可多选启用付费引擎（bocha 博查 / serpapi，后者内部固定先 Google 后 Brave 级联），`engineOrder` 定义的卡片顺序即优先级——第一个失败自动尝试下一个，再回落模型商搜索。
 - `src/web.ts`：webview 宿主、`window.MinoAgent` RPC、事件推送、静态资源白名单、内嵌终端后端。
 - `public/index.html`：全部前端（原生 JS，单文件，无构建）。
 - `launcher/`：Go 启动器（开窗、目录选择、打包校验）。

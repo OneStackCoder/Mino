@@ -411,66 +411,91 @@ async function searchBocha(
     .filter((h) => h.title || h.url);
 }
 
-// SerpAPI 搜索核心逻辑（付费 API，Key 由用户在设置中填写；返回 Google 搜索结果，国内通常需代理）
+// SerpAPI 搜索核心逻辑（付费 API，国内通常需代理）：固定先 google 再 brave 级联，
+// google 用 gl/hl 固定中国区中文（实测对中文查询质量最好），失败或无结果自动换 brave
 async function searchSerpapi(
   query: string,
   limit: number,
   apiKey: string,
   proxy?: string
 ): Promise<SearchHit[]> {
-  const params = new URLSearchParams({
-    engine: "google",
-    q: query,
-    num: String(limit),
-    api_key: apiKey,
-  });
-  const res = await httpFetch(
-    `https://serpapi.com/search.json?${params}`,
-    { method: "GET" },
-    proxy,
-    20000
-  );
-  if (!res.ok)
-    throw new Error(
-      res.status === 401
-        ? "HTTP 401（SerpAPI API Key 无效，请在设置中检查）"
-        : `HTTP ${res.status}`
-    );
-  const data = (await res.json()) as {
-    organic_results?: Array<{
-      title?: string;
-      link?: string;
-      snippet?: string;
-    }>;
-  };
-  return (data.organic_results ?? [])
-    .map((h) => ({
-      title: h.title ?? "",
-      desc: h.snippet ?? "",
-      url: h.link ?? "",
-    }))
-    .filter((h) => h.title || h.url);
+  const engines = [
+    { name: "google", extra: { gl: "cn", hl: "zh-cn" } },
+    { name: "brave", extra: {} },
+  ] as const;
+  const errors: string[] = [];
+  for (const { name, extra } of engines) {
+    const params = new URLSearchParams({
+      engine: name,
+      q: query,
+      num: String(limit),
+      ...extra,
+      api_key: apiKey,
+    });
+    try {
+      const res = await httpFetch(
+        `https://serpapi.com/search.json?${params}`,
+        { method: "GET" },
+        proxy,
+        20000
+      );
+      if (!res.ok)
+        throw new Error(
+          res.status === 401
+            ? "HTTP 401（SerpAPI API Key 无效，请在设置中检查）"
+            : `HTTP ${res.status}`
+        );
+      const data = (await res.json()) as {
+        organic_results?: Array<{
+          title?: string;
+          link?: string;
+          snippet?: string;
+        }>;
+        // SerpAPI 用 HTTP 200 + error 字段表达业务失败（如引擎对部分查询不给结果）
+        error?: string;
+      };
+      if (data.error && !data.organic_results?.length)
+        throw new Error(data.error);
+      const hits = (data.organic_results ?? [])
+        .map((h) => ({
+          title: h.title ?? "",
+          desc: h.snippet ?? "",
+          url: h.link ?? "",
+        }))
+        .filter((h) => h.title || h.url);
+      if (hits.length) return hits;
+      errors.push(`${name}: 没有找到相关结果`);
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Key 无效属致命错误，换引擎也救不了，直接抛出终止级联
+      if (msg.includes("401")) throw new Error(msg);
+      errors.push(`${name}: ${msg}`);
+    }
+  }
+  throw new Error(errors.join("；"));
 }
 
 // 工厂：统一搜索入口。默认用当前模型商的搜索接口（复用其 API Key）；
 // 用户启用付费引擎（博查 / SerpAPI）后按卡片顺序依次尝试，失败或无结果时自动回落模型商搜索。
 // 不给模型暴露引擎参数：调用方式由用户设置决定，避免模型乱传值触发校验失败与重试
 function createWebSearchTool(search: SearchSettings, config: AgentConfig) {
-  // 博查在前：国内可直连；SerpAPI 是 Google 结果，国内多数场景需代理
+  // 按用户拖定的卡片顺序构建尝试队列：第一个优先，失败尝试下一个启用的引擎
   const paidEngines: Array<{
     name: string;
     run: (query: string, limit: number, proxy?: string) => Promise<SearchHit[]>;
   }> = [];
-  if (search.bocha && search.bochaApiKey)
-    paidEngines.push({
-      name: "博查",
-      run: (q, n, p) => searchBocha(q, n, search.bochaApiKey, p),
-    });
-  if (search.serpapi && search.serpapiApiKey)
-    paidEngines.push({
-      name: "SerpAPI",
-      run: (q, n, p) => searchSerpapi(q, n, search.serpapiApiKey, p),
-    });
+  for (const id of search.engineOrder) {
+    if (id === "bocha" && search.bocha && search.bochaApiKey)
+      paidEngines.push({
+        name: "博查",
+        run: (q, n, p) => searchBocha(q, n, search.bochaApiKey, p),
+      });
+    else if (id === "serpapi" && search.serpapi && search.serpapiApiKey)
+      paidEngines.push({
+        name: "SerpAPI",
+        run: (q, n, p) => searchSerpapi(q, n, search.serpapiApiKey, p),
+      });
+  }
   const providerReady =
     (config.provider === "zhipu" ||
       config.provider === "deepseek" ||
