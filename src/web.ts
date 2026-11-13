@@ -548,20 +548,31 @@ export function startWebUI(): void {
     const mod = await import("@webviewjs/webview");
     const Application = mod.Application ?? mod.default?.Application;
     const app = new Application();
+    // Windows 的窗口图标默认取自宿主进程 node.exe。仅靠创建后调 setWindowIcon 在 Windows 上
+    // 仍显示 node 图标，改走创建参数：windowsTaskbarIcon 在注册窗口类时写入 hIcon（标题栏 /
+    // 任务栏共用），创建后再补一次 WM_SETICON 兜底。其余平台忽略该参数
+    let winIcon: Buffer | null = null;
+    const isWin = process.platform === "win32";
+    if (isWin) {
+      try {
+        winIcon = fs.readFileSync(path.join(ROOT, "public", "icon.png"));
+      } catch {
+        // 图标缺失不影响启动
+      }
+    }
     const win = app.createBrowserWindow({
       title: "Mino",
       width: 1300,
       height: 900,
       logical: true, // 尺寸按逻辑像素解释：HiDPI（scaleFactor=2）下物理像素会被缩放一半
       resizable: true,
+      ...(winIcon ? { windowsTaskbarIcon: { data: winIcon } } : {}),
     });
-
-    // Windows 的窗口图标默认取自宿主进程 node.exe，需要显式换成应用图标（传编码后的 PNG 由原生层解码）
-    if (process.platform === "win32") {
+    if (isWin && winIcon) {
       try {
-        win.setWindowIcon(fs.readFileSync(path.join(ROOT, "public", "icon.png")));
+        win.setWindowIcon(winIcon);
       } catch {
-        // 图标缺失不影响启动
+        // 设置失败不阻塞启动，窗口类图标已兜底
       }
     }
 
